@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Objectiv.go</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      color: #e0e0e0;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    /* Titlebar */
+    #titlebar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 32px;
+      background: #0a0a0a;
+      -webkit-app-region: drag;
+      flex-shrink: 0;
+    }
+
+    #titlebar-title {
+      padding-left: 12px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    #window-controls {
+      display: flex;
+      -webkit-app-region: no-drag;
+    }
+
+    .window-btn {
+      width: 46px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-family: 'Segoe MDL2 Assets', sans-serif;
+      font-size: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .window-btn:hover {
+      background: #333;
+    }
+
+    .window-btn.close:hover {
+      background: #e81123;
+      color: #fff;
+    }
+
+    /* Main content wrapper */
+    #content-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Intro Screen */
+    #intro {
+      position: fixed;
+      top: 32px;
+      left: 0;
+      width: 100%;
+      height: calc(100% - 32px);
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    #intro-text {
+      font-size: 0.8rem;
+      color: #e0e0e0;
+    }
+
+    #intro-cursor {
+      display: inline-block;
+      width: 0.6em;
+      height: 1em;
+      background: #e0e0e0;
+      margin-left: 2px;
+      animation: blink 0.7s infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+
+    /* Main App */
+    #app {
+      display: none;
+      flex-direction: column;
+      width: 100%;
+      max-width: 500px;
+      padding: 1rem;
+      padding-bottom: 60px;
+    }
+
+    /* Header */
+    #header {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    #header:hover {
+      background: #1a1a1a;
+    }
+
+    #header-title {
+      font-weight: bold;
+      color: #fff;
+    }
+
+    #header-divider {
+      color: #555;
+    }
+
+    #header-tagline {
+      color: #888;
+    }
+
+    #header-description {
+      color: #888;
+    }
+
+    #header-due {
+      color: #888;
+    }
+
+    #header-due.overdue {
+      color: #ff5555;
+    }
+
+    /* List Container */
+    #list-container {
+      overflow-y: auto;
+      padding: 0 12px;
+      margin: 0.5rem 0;
+    }
+
+    .list-item {
+      padding: 2px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .list-item:hover {
+      background: #1a1a1a;
+    }
+
+    .list-item.selected {
+      background: #0891b2;
+      color: #000;
+    }
+
+    .list-item.selected .progress,
+    .list-item.selected .date {
+      color: #005566;
+    }
+
+    .list-item.selected .date.overdue {
+      color: #660000;
+    }
+
+    .list-item.selected .task-done {
+      color: #005500;
+    }
+
+    .progress {
+      color: #888;
+    }
+
+    .date {
+      color: #888;
+    }
+
+    .date.overdue {
+      color: #ff5555;
+    }
+
+    .task-done {
+      color: #55ff55;
+    }
+
+    .add-option {
+      color: #0891b2;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .add-option:hover {
+      background: #1a1a1a;
+    }
+
+    .add-option.disabled {
+      color: #555;
+      cursor: default;
+    }
+
+    .add-option.disabled:hover {
+      background: transparent;
+    }
+
+    /* Inline prompt row */
+    .prompt-row {
+      padding: 2px 8px;
+      background: #000;
+      border: 1px solid #0891b2;
+    }
+
+    .prompt-label {
+      color: #0891b2;
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+
+    .prompt-input-wrap {
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt-prefix {
+      color: #0891b2;
+      margin-right: 4px;
+    }
+
+    .prompt-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #e0e0e0;
+      font-family: inherit;
+      font-size: inherit;
+      outline: none;
+      caret-color: #e0e0e0;
+      padding: 0;
+    }
+
+    /* Confirm row */
+    .confirm-row {
+      padding: 2px 8px;
+      background: #000;
+      border: 1px solid #ffff55;
+    }
+
+    .confirm-text {
+      color: #ffff55;
+    }
+
+    .confirm-hint {
+      color: #888;
+      font-size: 12px;
+    }
+
+    /* Status Bar */
+    #status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 8px 12px;
+      color: #888;
+      background: #000;
+      border-top: 1px solid #333;
+    }
+
+    #shortcuts {
+      color: #666;
+      font-size: 13px;
+    }
+
+    /* Message toast */
+    #message-toast {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a1a;
+      border: 1px solid #55ff55;
+      color: #55ff55;
+      padding: 8px 16px;
+      display: none;
+      z-index: 100;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Titlebar -->
+  <div id="titlebar">
+    <div id="titlebar-title">Objectiv.go</div>
+    <div id="window-controls">
+      <button class="window-btn" id="btn-minimize">&#xE921;</button>
+      <button class="window-btn" id="btn-maximize">&#xE922;</button>
+      <button class="window-btn close" id="btn-close">&#xE8BB;</button>
+    </div>
+  </div>
+
+  <!-- Content Wrapper -->
+  <div id="content-wrapper">
+    <!-- Intro Screen -->
+    <div id="intro">
+      <div style="text-align: center;">
+        <div><span id="intro-text"></span><span id="intro-cursor"></span></div>
+        <div id="intro-tagline" style="color: #e0e0e0; font-size: 0.8rem; margin-top: 8px; opacity: 0;"></div>
+      </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app">
+    <div id="header" onclick="handleHeaderClick()">
+      <div id="header-title">OUTCOMES</div>
+      <div id="header-divider"></div>
+      <div id="header-tagline"></div>
+      <div id="header-description"></div>
+      <div id="header-due"></div>
+    </div>
+
+    <div id="list-container"></div>
+
+    <div id="status-bar">
+      <div id="level-info">Outcomes (0/3)</div>
+      <div id="shortcuts">[↑↓] Navigate  [Enter] Select  [a] Add  [e] Edit  [d] Delete  [q] Quit</div>
+    </div>
+  </div>
+
+    <!-- Message Toast -->
+    <div id="message-toast"></div>
+  </div>
+
+  <script>
+    // Window controls (Electron)
+    if (window.electronAPI) {
+      document.getElementById('btn-minimize').addEventListener('click', () => window.electronAPI.minimize());
+      document.getElementById('btn-maximize').addEventListener('click', () => window.electronAPI.maximize());
+      document.getElementById('btn-close').addEventListener('click', () => window.electronAPI.close());
+    }
+  </script>
+
+  <script>
+    // Data
+    const STORAGE_KEY = 'life-data';
+    let data = loadData();
+
+    // Navigation state
+    let navigationStack = [];
+    let currentView = {
+      items: null,
+      level: 'outcomes',
+      parent: null,
+      parentName: null
+    };
+    let selectedIndex = 0;
+
+    // Prompt state
+    let promptMode = null; // null, 'add', 'edit', 'confirm'
+    let promptStep = 0;
+    let promptData = {};
+    let promptTargetIndex = -1; // Which row the prompt is on
+
+    // Load data from localStorage
+    function loadData() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch (e) {}
+      return { outcomes: [] };
+    }
+
+    // Save data to localStorage
+    function saveData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    // Generate unique ID
+    function generateId() {
+      return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    }
+
+    // Format date for display
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${months[date.getMonth()]} ${date.getDate()}`;
+    }
+
+    // Check if date is overdue
+    function isOverdue(dateStr) {
+      if (!dateStr) return false;
+      const date = new Date(dateStr);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return date < today;
+    }
+
+    // Calculate progress percentage
+    function calculateProgress(item, level) {
+      if (level === 'step') {
+        return item.done ? 100 : 0;
+      }
+
+      const childKey = {
+        'outcome': 'objectives',
+        'objective': 'priorities',
+        'priority': 'steps'
+      }[level];
+
+      const childLevel = {
+        'outcome': 'objective',
+        'objective': 'priority',
+        'priority': 'step'
+      }[level];
+
+      const children = item[childKey] || [];
+      if (children.length === 0) return 0;
+
+      const total = children.reduce((sum, child) => {
+        return sum + calculateProgress(child, childLevel);
+      }, 0);
+
+      return Math.round(total / children.length);
+    }
+
+    // Get child key for level
+    function getChildKey(level) {
+      return {
+        'outcomes': 'objectives',
+        'outcome': 'objectives',
+        'objective': 'priorities',
+        'priority': 'steps'
+      }[level];
+    }
+
+    // Get child type for level
+    function getChildType(level) {
+      return {
+        'outcomes': 'outcome',
+        'outcome': 'objective',
+        'objective': 'priority',
+        'priority': 'step'
+      }[level];
+    }
+
+    // Capitalize first letter
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // Create new item
+    function createItem(type, name, description = '', dueDate = null) {
+      const base = {
+        id: generateId(),
+        name,
+        description
+      };
+
+      if (type !== 'outcome') {
+        base.dueDate = dueDate;
+      }
+
+      switch (type) {
+        case 'outcome':
+          base.objectives = [];
+          break;
+        case 'objective':
+          base.priorities = [];
+          break;
+        case 'priority':
+          base.steps = [];
+          break;
+        case 'step':
+          base.done = false;
+          break;
+      }
+
+      return base;
+    }
+
+    // Show intro animation
+    async function showIntro() {
+      // Load random tagline
+      let tagline = 'Proceed.';
+      try {
+        const response = await fetch('taglines.json');
+        const taglines = await response.json();
+        tagline = taglines[Math.floor(Math.random() * taglines.length)];
+      } catch (e) {}
+
+      const introText = document.getElementById('intro-text');
+      const introTagline = document.getElementById('intro-tagline');
+      const introCursor = document.getElementById('intro-cursor');
+
+      // Type the title
+      await typeText(introText, 'Objectiv.go', 80);
+
+      // Brief pause, then move cursor to tagline
+      await new Promise(r => setTimeout(r, 300));
+      introTagline.style.opacity = '1';
+      introTagline.appendChild(introCursor);
+
+      // Type the tagline at same speed
+      await typeText(introTagline, tagline, 80, introCursor);
+
+      // Wait then transition
+      await new Promise(r => setTimeout(r, 1500));
+      document.getElementById('intro').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+    }
+
+    // Helper function to type text
+    function typeText(element, text, speed, cursorEl = null) {
+      return new Promise((resolve) => {
+        let i = 0;
+        const interval = setInterval(() => {
+          if (i <= text.length) {
+            if (cursorEl) {
+              element.textContent = text.slice(0, i);
+              element.appendChild(cursorEl);
+            } else {
+              element.textContent = text.slice(0, i);
+            }
+            i++;
+          } else {
+            clearInterval(interval);
+            resolve();
+          }
+        }, speed);
+      });
+    }
+
+    // Update header display
+    function updateHeader() {
+      const { level, parent } = currentView;
+      const titleEl = document.getElementById('header-title');
+      const dividerEl = document.getElementById('header-divider');
+      const taglineEl = document.getElementById('header-tagline');
+      const descEl = document.getElementById('header-description');
+      const dueEl = document.getElementById('header-due');
+
+      if (level === 'outcomes') {
+        titleEl.textContent = 'OUTCOMES';
+        dividerEl.style.display = 'none';
+        taglineEl.style.display = 'none';
+        descEl.textContent = '';
+        dueEl.textContent = '';
+        dueEl.className = '';
+      } else if (parent) {
+        titleEl.textContent = parent.name;
+        dividerEl.style.display = 'none';
+        taglineEl.style.display = 'none';
+
+        if (parent.description) {
+          descEl.textContent = `"${parent.description}"`;
+        } else {
+          descEl.textContent = '';
+        }
+
+        if (parent.dueDate) {
+          const dateStr = formatDate(parent.dueDate);
+          if (isOverdue(parent.dueDate)) {
+            dueEl.textContent = `Due: ${dateStr} (overdue)`;
+            dueEl.className = 'overdue';
+          } else {
+            dueEl.textContent = `Due: ${dateStr}`;
+            dueEl.className = '';
+          }
+        } else {
+          dueEl.textContent = '';
+          dueEl.className = '';
+        }
+      }
+    }
+
+    // Get prompt label for current step
+    function getPromptLabel() {
+      const type = promptData.type;
+      if (promptMode === 'add') {
+        if (promptStep === 0) return `${capitalize(type)} name:`;
+        if (promptStep === 1) return 'Description (optional):';
+        if (promptStep === 2) return 'Due date (YYYY-MM-DD, optional):';
+      } else if (promptMode === 'edit') {
+        if (promptStep === 0) return 'Name:';
+        if (promptStep === 1) return 'Description:';
+        if (promptStep === 2) return 'Due date (YYYY-MM-DD, empty to clear):';
+      }
+      return '';
+    }
+
+    // Get prompt default value for current step
+    function getPromptDefault() {
+      if (promptMode === 'edit') {
+        const item = promptData.item;
+        if (promptStep === 0) return item.name;
+        if (promptStep === 1) return item.description || '';
+        if (promptStep === 2) return item.dueDate || '';
+      }
+      return '';
+    }
+
+    // Create inline prompt HTML
+    function createPromptRow(label, defaultValue = '') {
+      return `
+        <div class="prompt-row">
+          <div class="prompt-label">${label}</div>
+          <div class="prompt-input-wrap">
+            <span class="prompt-prefix">&gt;</span>
+            <input type="text" class="prompt-input" value="${defaultValue.replace(/"/g, '&quot;')}" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+      `;
+    }
+
+    // Create confirm row HTML
+    function createConfirmRow(text) {
+      return `
+        <div class="confirm-row">
+          <div class="confirm-text">${text}</div>
+          <div class="confirm-hint">[y] Yes  [n] No  [Esc] Cancel</div>
+        </div>
+      `;
+    }
+
+    // Update list display
+    function updateList() {
+      const { items, level } = currentView;
+      const container = document.getElementById('list-container');
+      container.innerHTML = '';
+
+      items.forEach((item, index) => {
+        // Check if this row should be a prompt
+        if (promptMode === 'edit' && promptTargetIndex === index) {
+          const div = document.createElement('div');
+          div.innerHTML = createPromptRow(getPromptLabel(), getPromptDefault());
+          container.appendChild(div.firstElementChild);
+          return;
+        }
+
+        if (promptMode === 'confirm' && promptTargetIndex === index) {
+          const div = document.createElement('div');
+          div.innerHTML = createConfirmRow(`Delete "${item.name}"?`);
+          container.appendChild(div.firstElementChild);
+          return;
+        }
+
+        const div = document.createElement('div');
+        div.className = 'list-item' + (index === selectedIndex && !promptMode ? ' selected' : '');
+        div.onclick = () => handleItemClick(index);
+
+        let content = '';
+
+        if (level === 'priority') {
+          // Steps with checkbox
+          if (item.done) {
+            content = `<span class="task-done">[x] ${item.name}</span>`;
+          } else {
+            content = `[ ] ${item.name}`;
+          }
+        } else {
+          content = `${index + 1}. ${item.name}`;
+
+          // Progress for non-steps
+          const itemLevel = level === 'outcomes' ? 'outcome' : level;
+          const progress = calculateProgress(item, itemLevel);
+          content += ` <span class="progress">[${progress}%]</span>`;
+        }
+
+        // Due date
+        if (item.dueDate) {
+          const dateStr = formatDate(item.dueDate);
+          const overdueClass = isOverdue(item.dueDate) && !item.done ? ' overdue' : '';
+          content += ` <span class="date${overdueClass}">${dateStr}</span>`;
+        }
+
+        div.innerHTML = content;
+        container.appendChild(div);
+      });
+
+      // Add "Add new" option or prompt
+      const childType = getChildType(level) || 'dream';
+
+      if (promptMode === 'add' && promptTargetIndex === items.length) {
+        const div = document.createElement('div');
+        div.innerHTML = createPromptRow(getPromptLabel(), getPromptDefault());
+        container.appendChild(div.firstElementChild);
+      } else if (items.length < 3) {
+        const addDiv = document.createElement('div');
+        addDiv.className = 'add-option';
+        addDiv.innerHTML = `+ Add new ${childType}`;
+        addDiv.onclick = () => startAdd();
+        container.appendChild(addDiv);
+      } else {
+        const addDiv = document.createElement('div');
+        addDiv.className = 'add-option disabled';
+        addDiv.innerHTML = '(max 3 reached)';
+        container.appendChild(addDiv);
+      }
+
+      // Focus input if prompt is active
+      if (promptMode === 'add' || promptMode === 'edit') {
+        setTimeout(() => {
+          const input = container.querySelector('.prompt-input');
+          if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+        }, 0);
+      }
+    }
+
+    // Update status bar
+    function updateStatusBar() {
+      const { items, level } = currentView;
+      const levelLabel = level === 'outcomes' ? 'Outcomes' :
+                         level === 'outcome' ? 'Objectives' :
+                         level === 'objective' ? 'Priorities' : 'Steps';
+
+      document.getElementById('level-info').textContent = `${levelLabel} (${items.length}/3)`;
+
+      let shortcuts = '';
+      if (promptMode) {
+        shortcuts = '[Enter] Confirm  [Esc] Cancel';
+      } else if (level === 'priority') {
+        shortcuts = '[↑↓] Navigate  [Enter/Space] Toggle  [a] Add  [e] Edit  [d] Delete';
+      } else if (level === 'outcomes') {
+        shortcuts = '[↑↓] Navigate  [Enter] Select  [a] Add  [e] Edit  [d] Delete  [q] Quit';
+      } else {
+        shortcuts = '[↑↓] Navigate  [Enter] Select  [a] Add  [e] Edit  [d] Delete  [Esc] Back';
+      }
+      document.getElementById('shortcuts').textContent = shortcuts;
+    }
+
+    // Show message toast
+    function showMessage(text, duration = 1500) {
+      const toast = document.getElementById('message-toast');
+      toast.textContent = text;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, duration);
+    }
+
+    // Handle item click
+    function handleItemClick(index) {
+      if (promptMode) return;
+
+      selectedIndex = index;
+      updateList();
+      handleSelect();
+    }
+
+    // Handle header click
+    function handleHeaderClick() {
+      if (promptMode) return;
+      handleBack();
+    }
+
+    // Handle item selection (Enter)
+    function handleSelect() {
+      const { items, level } = currentView;
+
+      if (selectedIndex >= items.length) return;
+
+      const item = items[selectedIndex];
+
+      switch (level) {
+        case 'outcomes':
+          showObjectives(item);
+          break;
+        case 'outcome':
+          showPriorities(item);
+          break;
+        case 'objective':
+          showSteps(item);
+          break;
+        case 'priority':
+          // Toggle step
+          item.done = !item.done;
+          saveData();
+          refreshView();
+          break;
+      }
+    }
+
+    // Show outcomes (top level)
+    function showOutcomes() {
+      currentView = {
+        items: data.outcomes,
+        level: 'outcomes',
+        parent: null,
+        parentName: null
+      };
+      navigationStack = [];
+      selectedIndex = 0;
+      refreshView();
+    }
+
+    // Show objectives
+    function showObjectives(outcome) {
+      navigationStack.push({ ...currentView, selectedIndex });
+      currentView = {
+        items: outcome.objectives,
+        level: 'outcome',
+        parent: outcome,
+        parentName: outcome.name
+      };
+      selectedIndex = 0;
+      refreshView();
+    }
+
+    // Show priorities
+    function showPriorities(objective) {
+      navigationStack.push({ ...currentView, selectedIndex });
+      currentView = {
+        items: objective.priorities,
+        level: 'objective',
+        parent: objective,
+        parentName: objective.name
+      };
+      selectedIndex = 0;
+      refreshView();
+    }
+
+    // Show steps
+    function showSteps(priority) {
+      navigationStack.push({ ...currentView, selectedIndex });
+      currentView = {
+        items: priority.steps,
+        level: 'priority',
+        parent: priority,
+        parentName: priority.name
+      };
+      selectedIndex = 0;
+      refreshView();
+    }
+
+    // Handle back navigation
+    function handleBack() {
+      if (navigationStack.length === 0) return;
+
+      const prev = navigationStack.pop();
+      currentView = prev;
+      selectedIndex = prev.selectedIndex || 0;
+      refreshView();
+    }
+
+    // Refresh current view
+    function refreshView() {
+      const { level, parent } = currentView;
+
+      if (level === 'outcomes') {
+        currentView.items = data.outcomes;
+      } else {
+        const childKey = getChildKey(level);
+        currentView.items = parent[childKey];
+      }
+
+      updateHeader();
+      updateList();
+      updateStatusBar();
+    }
+
+    // Start add flow
+    function startAdd() {
+      const { items, level } = currentView;
+      if (items.length >= 3) return;
+
+      promptMode = 'add';
+      promptStep = 0;
+      promptTargetIndex = items.length; // The "add new" row
+      promptData = {
+        type: getChildType(level) || 'dream'
+      };
+
+      updateList();
+      updateStatusBar();
+    }
+
+    // Start edit flow
+    function startEdit() {
+      const { items, level } = currentView;
+      if (selectedIndex >= items.length) return;
+
+      const item = items[selectedIndex];
+      const itemType = level === 'outcomes' ? 'outcome' :
+                       level === 'outcome' ? 'objective' :
+                       level === 'objective' ? 'priority' : 'step';
+
+      promptMode = 'edit';
+      promptStep = 0;
+      promptTargetIndex = selectedIndex;
+      promptData = {
+        type: itemType,
+        item: item,
+        index: selectedIndex
+      };
+
+      updateList();
+      updateStatusBar();
+    }
+
+    // Start delete flow
+    function startDelete() {
+      const { items } = currentView;
+      if (selectedIndex >= items.length) return;
+
+      const item = items[selectedIndex];
+
+      promptMode = 'confirm';
+      promptTargetIndex = selectedIndex;
+      promptData = {
+        action: 'delete',
+        index: selectedIndex,
+        item: item
+      };
+
+      updateList();
+      updateStatusBar();
+    }
+
+    // Process prompt input
+    function processPromptInput(value) {
+      if (promptMode === 'add') {
+        processAddStep(value);
+      } else if (promptMode === 'edit') {
+        processEditStep(value);
+      }
+    }
+
+    // Process add step
+    function processAddStep(value) {
+      const type = promptData.type;
+
+      if (promptStep === 0) {
+        // Name
+        if (!value.trim()) {
+          showMessage('Name is required');
+          updateList();
+          return;
+        }
+        promptData.name = value.trim();
+        promptStep = 1;
+        updateList();
+      } else if (promptStep === 1) {
+        // Description
+        promptData.description = value.trim();
+
+        if (type === 'outcome') {
+          // Outcomes don't have due dates, finish
+          finishAdd();
+        } else {
+          promptStep = 2;
+          updateList();
+        }
+      } else if (promptStep === 2) {
+        // Due date
+        if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          promptData.dueDate = value;
+        } else {
+          promptData.dueDate = null;
+        }
+        finishAdd();
+      }
+    }
+
+    // Finish add
+    function finishAdd() {
+      const newItem = createItem(
+        promptData.type,
+        promptData.name,
+        promptData.description || '',
+        promptData.dueDate || null
+      );
+
+      const { level, parent } = currentView;
+      if (level === 'outcomes') {
+        data.outcomes.push(newItem);
+      } else {
+        const childKey = getChildKey(level);
+        parent[childKey].push(newItem);
+      }
+
+      saveData();
+      cancelPrompt();
+    }
+
+    // Process edit step
+    function processEditStep(value) {
+      const { type, item } = promptData;
+
+      if (promptStep === 0) {
+        // Name
+        if (!value.trim()) {
+          showMessage('Name is required');
+          updateList();
+          return;
+        }
+        promptData.newName = value.trim();
+        promptStep = 1;
+        updateList();
+      } else if (promptStep === 1) {
+        // Description
+        promptData.newDescription = value.trim();
+
+        if (type === 'outcome' || type === 'step') {
+          // Outcomes and steps don't have due dates, finish
+          finishEdit();
+        } else {
+          promptStep = 2;
+          updateList();
+        }
+      } else if (promptStep === 2) {
+        // Due date
+        if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          promptData.newDueDate = value;
+        } else {
+          promptData.newDueDate = null;
+        }
+        finishEdit();
+      }
+    }
+
+    // Finish edit
+    function finishEdit() {
+      const { item, newName, newDescription, newDueDate } = promptData;
+
+      item.name = newName;
+      item.description = newDescription || '';
+      if (promptData.type !== 'outcome' && promptData.type !== 'step') {
+        item.dueDate = newDueDate;
+      }
+
+      saveData();
+      cancelPrompt();
+    }
+
+    // Process confirm (y/n)
+    function processConfirm(confirmed) {
+      if (confirmed && promptData.action === 'delete') {
+        const { level, parent } = currentView;
+        const index = promptData.index;
+
+        if (level === 'outcomes') {
+          data.outcomes.splice(index, 1);
+        } else {
+          const childKey = getChildKey(level);
+          parent[childKey].splice(index, 1);
+        }
+
+        saveData();
+        selectedIndex = Math.min(selectedIndex, currentView.items.length - 1);
+        if (selectedIndex < 0) selectedIndex = 0;
+      }
+
+      cancelPrompt();
+    }
+
+    // Cancel prompt
+    function cancelPrompt() {
+      promptMode = null;
+      promptStep = 0;
+      promptData = {};
+      promptTargetIndex = -1;
+      refreshView();
+    }
+
+    // Keyboard handling
+    document.addEventListener('keydown', (e) => {
+      // Handle prompt input
+      if (promptMode === 'add' || promptMode === 'edit') {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelPrompt();
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const input = document.querySelector('.prompt-input');
+          if (input) {
+            processPromptInput(input.value);
+          }
+          return;
+        }
+        // Let other keys go to input
+        return;
+      }
+
+      // Handle confirm
+      if (promptMode === 'confirm') {
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          processConfirm(true);
+          return;
+        }
+        if (e.key === 'n' || e.key === 'N' || e.key === 'Escape') {
+          e.preventDefault();
+          processConfirm(false);
+          return;
+        }
+        return;
+      }
+
+      // Normal navigation
+      const { items } = currentView;
+
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault();
+          if (selectedIndex > 0) {
+            selectedIndex--;
+            updateList();
+          }
+          break;
+
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault();
+          if (selectedIndex < items.length - 1) {
+            selectedIndex++;
+            updateList();
+          }
+          break;
+
+        case 'Enter':
+          e.preventDefault();
+          handleSelect();
+          break;
+
+        case ' ':
+          e.preventDefault();
+          if (currentView.level === 'priority' && selectedIndex < items.length) {
+            items[selectedIndex].done = !items[selectedIndex].done;
+            saveData();
+            refreshView();
+          }
+          break;
+
+        case 'a':
+          e.preventDefault();
+          startAdd();
+          break;
+
+        case 'e':
+          e.preventDefault();
+          startEdit();
+          break;
+
+        case 'd':
+          e.preventDefault();
+          startDelete();
+          break;
+
+        case 'Escape':
+        case 'Backspace':
+        case 'b':
+          e.preventDefault();
+          handleBack();
+          break;
+
+        case 'q':
+          if (currentView.level === 'outcomes') {
+            showMessage('session ended.');
+          }
+          break;
+      }
+    });
+
+    // Initialize app
+    async function init() {
+      await showIntro();
+      showOutcomes();
+    }
+
+    init();
+  </script>
+</body>
+</html>

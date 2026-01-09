@@ -1,12 +1,16 @@
 {
-  "name": "life",
+  "name": "Objectiv.go",
   "version": "1.0.0",
-  "description": "Life, Keep it Simple. A terminal tool for transmuting dreams into reality.",
-  "main": "life.js",
+  "description": "Objectiv.go - A tool for transmuting dreams into reality.",
+  "main": "main.js",
   "scripts": {
-    "start": "node life.js"
+    "start": "electron .",
+    "terminal": "node life.js"
   },
   "dependencies": {
     "blessed": "^0.1.81"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
   }
 }
