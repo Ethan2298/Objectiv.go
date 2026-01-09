@@ -131,32 +131,61 @@
 
     #side-list-items {
       flex: 1;
-      overflow: hidden;
-      padding: 16px 0;
+      overflow-y: auto;
+      padding: 12px 0;
     }
 
     /* Side list item with ball indicator */
     .side-item {
       display: flex;
       align-items: center;
-      padding: 6px 16px;
+      padding: 2px 8px;
       cursor: pointer;
       color: #888;
-      transition: color 0.15s;
+      transition: color 0.15s, background 0.15s;
+      position: relative;
     }
 
     .side-item:hover {
       color: #e0e0e0;
+      background: rgba(255, 255, 255, 0.06);
     }
 
     .side-item.selected {
       color: #e0e0e0;
     }
 
+    .side-item.editing {
+      color: #e0e0e0;
+    }
+
+    .side-item-icon {
+      color: #0891b2;
+      margin-right: 4px;
+      flex-shrink: 0;
+      min-width: 12px;
+    }
+
     .side-item-name {
+      flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .side-item-name[contenteditable] {
+      outline: none;
+      caret-color: #0891b2;
+      min-width: 50px;
+      white-space: pre-wrap;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    .side-item-name[contenteditable]:empty:before {
+      content: attr(data-placeholder);
+      color: #555;
+      font-style: italic;
     }
 
     .side-item-indicator {
@@ -165,10 +194,15 @@
       color: #0891b2;
       font-size: 8px;
       transition: opacity 0.15s;
+      flex-shrink: 0;
     }
 
     .side-item.selected .side-item-indicator {
       opacity: 1;
+    }
+
+    .side-item.editing .side-item-indicator {
+      display: none;
     }
 
     /* Content View (right pane - 2/3 width) */
@@ -309,8 +343,14 @@
 
     .list-item-content[contenteditable="true"] {
       outline: none;
-      caret-color: #e0e0e0;
+      caret-color: #0891b2;
       cursor: text;
+    }
+
+    .list-item-content[contenteditable="true"]:empty:before {
+      content: attr(data-placeholder);
+      color: #555;
+      font-style: italic;
     }
 
     /* Meta Column - right-aligned, fixed minimum width */
@@ -432,7 +472,7 @@
       font-size: inherit;
       line-height: 1.4;
       outline: none;
-      caret-color: #e0e0e0;
+      caret-color: #0891b2;
       padding: 0;
       resize: none;
       overflow: hidden;
@@ -1049,21 +1089,32 @@
       container.innerHTML = '';
 
       data.objectives.forEach((obj, index) => {
+        const isEditing = promptMode === 'add' && promptTargetSection === 'objectives' && promptTargetIndex === index;
+
         const item = document.createElement('div');
         item.className = 'side-item' + (index === selectedObjectiveIndex ? ' selected' : '');
         item.dataset.index = index;
-        item.innerHTML = `
-          <span class="side-item-name">${obj.name}</span>
-          <span class="side-item-indicator">●</span>
-        `;
-        item.onclick = () => {
-          selectObjective(index);
-        };
+
+        if (isEditing) {
+          // Inline edit mode
+          item.innerHTML = `
+            <span class="side-item-name" contenteditable="true" data-placeholder="Name your objective"></span>
+          `;
+          item.style.color = '#0891b2';
+        } else {
+          item.innerHTML = `
+            <span class="side-item-name">${obj.name}</span>
+            <span class="side-item-indicator">●</span>
+          `;
+          item.onclick = () => {
+            selectObjective(index);
+          };
+        }
         container.appendChild(item);
       });
 
-      // Add option if < 3 objectives
-      if (data.objectives.length < 3) {
+      // Add option if not currently adding
+      if (!(promptMode === 'add' && promptTargetSection === 'objectives')) {
         const addItem = document.createElement('div');
         addItem.className = 'side-item';
         addItem.style.color = '#0891b2';
@@ -1147,9 +1198,10 @@
           return;
         }
 
+        const isAdding = promptMode === 'add' && promptTargetSection === 'priorities' && promptTargetIndex === index;
         const isEditing = promptMode === 'edit' && promptTargetSection === 'priorities' && promptTargetIndex === index;
         const isRefining = promptMode === 'refine' && promptTargetSection === 'priorities' && promptTargetIndex === index;
-        const isInEditMode = isEditing || isRefining;
+        const isInEditMode = isAdding || isEditing || isRefining;
 
         let textContent = priority.name;
         if (isRefining) textContent = priority.description || '';
@@ -1165,15 +1217,20 @@
             if (e.target.classList.contains('edit-btn')) return;
           }
         });
+
+        // Add placeholder for new items
+        if (isAdding) {
+          const contentEl = listItem.querySelector('.list-item-content');
+          if (contentEl) {
+            contentEl.dataset.placeholder = 'Name your priority';
+          }
+        }
+
         container.appendChild(listItem);
       });
 
-      // Add priority prompt or button
-      if (promptMode === 'add' && promptTargetSection === 'priorities') {
-        const div = document.createElement('div');
-        div.innerHTML = createPromptRow('Priority name:', '');
-        container.appendChild(div.firstElementChild);
-      } else if (obj.priorities.length < 3) {
+      // Add priority button (only show if not currently adding and under limit)
+      if (!(promptMode === 'add' && promptTargetSection === 'priorities') && obj.priorities.length < 3) {
         const addDiv = document.createElement('div');
         addDiv.className = 'add-option';
         addDiv.innerHTML = '+ Add priority';
@@ -1189,7 +1246,10 @@
       header.textContent = 'STEPS';
       container.appendChild(header);
 
-      if (obj.steps.length === 0 && !(promptMode === 'log' && promptTargetSection === 'steps')) {
+      // Check if we're adding a step (step will be in the array already)
+      const isAddingStep = promptMode === 'add' && promptTargetSection === 'steps';
+
+      if (obj.steps.length === 0 && !isAddingStep) {
         const empty = document.createElement('div');
         empty.className = 'empty-hint';
         empty.textContent = 'no steps logged yet';
@@ -1210,27 +1270,34 @@
 
         const timestamp = formatTimestamp(step.loggedAt);
         const orderNum = step.orderNumber || (actualIdx + 1);
+        const isAdding = promptMode === 'add' && promptTargetSection === 'steps' && promptTargetIndex === actualIdx;
         const isEditing = promptMode === 'edit' && promptTargetSection === 'steps' && promptTargetIndex === actualIdx;
+        const isInEditMode = isAdding || isEditing;
 
-        const iconContent = isEditing ? `#${orderNum} ${timestamp} >` : `#${orderNum} ${timestamp}`;
+        const iconContent = isInEditMode ? `#${orderNum} ${timestamp} >` : `#${orderNum} ${timestamp}`;
         const listItem = createListItem({
           icon: iconContent,
-          iconClass: isEditing ? 'timestamp editing' : 'timestamp',
+          iconClass: isInEditMode ? 'timestamp editing' : 'timestamp',
           content: step.name,
-          contentEditable: isEditing,
+          contentEditable: isInEditMode,
           meta: '',
           metaClass: 'compact',
           selected: false
         });
+
+        // Add placeholder for new items
+        if (isAdding) {
+          const contentEl = listItem.querySelector('.list-item-content');
+          if (contentEl) {
+            contentEl.dataset.placeholder = 'What did you do?';
+          }
+        }
+
         container.appendChild(listItem);
       }
 
-      // Add step prompt or button
-      if (promptMode === 'log' && promptTargetSection === 'steps') {
-        const div = document.createElement('div');
-        div.innerHTML = createPromptRow('What did you do?', '');
-        container.appendChild(div.firstElementChild);
-      } else {
+      // Add step button (only show if not currently adding)
+      if (!isAddingStep) {
         const addDiv = document.createElement('div');
         addDiv.className = 'add-option';
         addDiv.innerHTML = '+ Log a step';
@@ -1335,16 +1402,11 @@
         const div = document.createElement('div');
         div.innerHTML = createPromptRow(getPromptLabel(), '');
         container.appendChild(div.firstElementChild);
-      } else if (data.objectives.length < 3) {
+      } else {
         const addDiv = document.createElement('div');
         addDiv.className = 'add-option';
         addDiv.innerHTML = '+ Add new objective';
         addDiv.onclick = () => startAddObjective();
-        container.appendChild(addDiv);
-      } else {
-        const addDiv = document.createElement('div');
-        addDiv.className = 'add-option disabled';
-        addDiv.innerHTML = '(max 3 reached)';
         container.appendChild(addDiv);
       }
     }
@@ -1613,36 +1675,79 @@
 
     // Start add objective
     function startAddObjective() {
-      if (data.objectives.length >= 3) return;
+
+      // Create placeholder objective
+      const newObj = {
+        id: generateId(),
+        name: '',
+        description: '',
+        priorities: [],
+        steps: []
+      };
+      data.objectives.push(newObj);
+
+      // Set up edit mode for the new objective
       promptMode = 'add';
       promptStep = 0;
-      promptTargetIndex = data.objectives.length;
+      promptTargetIndex = data.objectives.length - 1;
       promptTargetSection = 'objectives';
-      promptData = { type: 'objective' };
-      updateList();
-      updateStatusBar();
+      promptData = { type: 'objective', item: newObj };
+      selectedObjectiveIndex = promptTargetIndex;
+
+      updateView();
     }
 
-    // Start add priority
+    // Start add priority (instant inline edit pattern)
     function startAddPriority() {
-      const obj = currentView.parent;
-      if (obj.priorities.length >= 3) return;
+      const obj = data.objectives[selectedObjectiveIndex];
+      if (!obj || obj.priorities.length >= 3) return;
+
+      // Create placeholder priority
+      const newPriority = {
+        id: generateId(),
+        name: '',
+        description: ''
+      };
+      obj.priorities.push(newPriority);
+
+      // Set up edit mode for the new priority
       promptMode = 'add';
       promptStep = 0;
-      promptTargetIndex = obj.priorities.length;
+      promptTargetIndex = obj.priorities.length - 1;
       promptTargetSection = 'priorities';
-      promptData = { type: 'priority' };
-      updateList();
+      promptData = { type: 'priority', item: newPriority };
+
+      renderContentView();
+      focusPromptInput();
       updateStatusBar();
     }
 
-    // Start log step
+    // Start log step (instant inline edit pattern)
     function startLogStep() {
-      promptMode = 'log';
+      const obj = data.objectives[selectedObjectiveIndex];
+      if (!obj) return;
+
+      // Calculate next order number
+      const maxOrder = obj.steps.reduce((max, s) => Math.max(max, s.orderNumber || 0), 0);
+
+      // Create placeholder step
+      const newStep = {
+        id: generateId(),
+        name: '',
+        loggedAt: new Date().toISOString(),
+        orderNumber: maxOrder + 1
+      };
+      obj.steps.push(newStep);
+
+      // Set up edit mode for the new step
+      promptMode = 'add';
       promptStep = 0;
+      promptTargetIndex = obj.steps.length - 1;
       promptTargetSection = 'steps';
-      promptData = {};
-      updateList();
+      promptData = { type: 'step', item: newStep };
+
+      renderContentView();
+      focusPromptInput();
       updateStatusBar();
     }
 
@@ -1734,13 +1839,45 @@
         processEditStep(value);
       } else if (promptMode === 'refine') {
         processRefineStep(value);
-      } else if (promptMode === 'log') {
-        processLogStepInput(value);
       }
     }
 
-    // Process add
+    // ========================================
+    // UNIFIED INLINE ADD PATTERN
+    // ========================================
+    // To add instant inline editing to any list:
+    // 1. In startAdd*(): Create placeholder item with empty name, add to array,
+    //    set promptMode='add', promptTargetSection, promptTargetIndex,
+    //    promptData={type:'yourType', item: newItem}
+    // 2. In render*(): Check isAdding, make item contenteditable, add data-placeholder
+    // 3. This function handles save (name set) or cancel (removed from array)
+    // 4. cancelPrompt() handles cleanup if user presses Escape
+    // ========================================
     function processAddStep(value) {
+      // Handle inline add (item already exists as placeholder)
+      if (promptData.item) {
+        if (!value.trim()) {
+          // Remove placeholder and cancel
+          if (promptData.type === 'objective') {
+            data.objectives.splice(promptTargetIndex, 1);
+            selectedObjectiveIndex = Math.max(0, data.objectives.length - 1);
+          } else if (promptData.type === 'priority') {
+            const obj = data.objectives[selectedObjectiveIndex];
+            if (obj) obj.priorities.splice(promptTargetIndex, 1);
+          } else if (promptData.type === 'step') {
+            const obj = data.objectives[selectedObjectiveIndex];
+            if (obj) obj.steps.splice(promptTargetIndex, 1);
+          }
+          cancelPrompt();
+          return;
+        }
+        promptData.item.name = value.trim();
+        saveData();
+        cancelPrompt();
+        return;
+      }
+
+      // Legacy multi-step flow (fallback)
       if (promptStep === 0) {
         if (!value.trim()) {
           showMessage('Name is required');
@@ -1756,7 +1893,7 @@
       }
     }
 
-    // Finish add
+    // Finish add (for priorities only now)
     function finishAdd() {
       const newItem = {
         id: generateId(),
@@ -1764,43 +1901,11 @@
         description: promptData.description || ''
       };
 
-      if (promptData.type === 'objective') {
-        newItem.priorities = [];
-        newItem.steps = [];
-        data.objectives.push(newItem);
-        selectedObjectiveIndex = data.objectives.length - 1;
-      } else if (promptData.type === 'priority') {
+      if (promptData.type === 'priority') {
         const obj = data.objectives[selectedObjectiveIndex];
         if (obj) obj.priorities.push(newItem);
       }
 
-      saveData();
-      cancelPrompt();
-    }
-
-    // Process log step
-    function processLogStepInput(value) {
-      if (!value.trim()) {
-        showMessage('Enter what you did');
-        updateList();
-        return;
-      }
-
-      const obj = data.objectives[selectedObjectiveIndex];
-      if (!obj) return;
-
-      // Calculate next order number (max existing + 1, or 1 if no steps)
-      const steps = obj.steps;
-      const maxOrder = steps.reduce((max, s) => Math.max(max, s.orderNumber || 0), 0);
-
-      const newStep = {
-        id: generateId(),
-        name: value.trim(),
-        loggedAt: new Date().toISOString(),
-        orderNumber: maxOrder + 1
-      };
-
-      obj.steps.push(newStep);
       saveData();
       cancelPrompt();
     }
@@ -1851,6 +1956,27 @@
 
     // Cancel prompt
     function cancelPrompt() {
+      // Remove placeholder items if adding was cancelled
+      if (promptMode === 'add' && promptData.item) {
+        if (promptTargetSection === 'objectives') {
+          const obj = data.objectives[promptTargetIndex];
+          if (obj && !obj.name.trim()) {
+            data.objectives.splice(promptTargetIndex, 1);
+            selectedObjectiveIndex = Math.max(0, data.objectives.length - 1);
+          }
+        } else if (promptTargetSection === 'priorities') {
+          const obj = data.objectives[selectedObjectiveIndex];
+          if (obj && obj.priorities[promptTargetIndex] && !obj.priorities[promptTargetIndex].name.trim()) {
+            obj.priorities.splice(promptTargetIndex, 1);
+          }
+        } else if (promptTargetSection === 'steps') {
+          const obj = data.objectives[selectedObjectiveIndex];
+          if (obj && obj.steps[promptTargetIndex] && !obj.steps[promptTargetIndex].name.trim()) {
+            obj.steps.splice(promptTargetIndex, 1);
+          }
+        }
+      }
+
       promptMode = null;
       promptStep = 0;
       promptData = {};
@@ -1890,7 +2016,7 @@
     // Keyboard handling (simplified for split-pane)
     document.addEventListener('keydown', (e) => {
       // Handle prompt input
-      if (promptMode === 'add' || promptMode === 'edit' || promptMode === 'refine' || promptMode === 'log') {
+      if (promptMode === 'add' || promptMode === 'edit' || promptMode === 'refine') {
         if (e.key === 'Escape') {
           e.preventDefault();
           cancelPrompt();
