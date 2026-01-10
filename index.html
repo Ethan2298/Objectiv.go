@@ -1533,7 +1533,7 @@
         // Update content view for the new selection
         const selectedItem = SideListState.getSelectedItem();
         if (selectedItem && selectedItem.type === SideListState.ItemType.OBJECTIVE) {
-          currentObjectiveIndex = selectedItem.index;
+          selectedObjectiveIndex = selectedItem.index;
           renderContentView();
         }
       }
