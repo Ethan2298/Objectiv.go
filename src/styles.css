@@ -242,6 +242,7 @@ body.browser-mode #intro {
   min-width: 0;
   overflow: hidden;
   scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .side-item:hover {
