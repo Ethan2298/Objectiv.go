@@ -2292,7 +2292,14 @@
     const SCROLL_THRESHOLD = isMac ? 50 : 0; // Mac trackpads need accumulation, mice don't
     let scrollResetTimeout = null;
 
-    document.getElementById('side-list').addEventListener('wheel', (e) => {
+    document.addEventListener('wheel', (e) => {
+      // Check if mouse is in the "left zone" (left of content-view divider)
+      const contentView = document.getElementById('content-view');
+      if (!contentView) return; // App not visible yet
+
+      const dividerX = contentView.getBoundingClientRect().left;
+      if (e.clientX >= dividerX) return; // Let content area scroll normally
+
       if (promptMode) return;
       e.preventDefault();
 
