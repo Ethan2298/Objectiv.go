@@ -1492,6 +1492,7 @@
     // ========================================
 
     // Detect which item is at the snap line and update selection
+    // Uses 25% threshold - selection changes when scrolled 25% into next item
     function updateSelectionFromScroll() {
       const container = document.getElementById('side-list-items');
       if (!container) return;
@@ -1502,32 +1503,39 @@
       const SideListState = window.Objectiv?.SideListState;
       if (!SideListState) return;
 
-      // The snap line is at 30vh from container top (due to scroll-padding-top)
+      // The snap line is at 30vh from container top
       const containerRect = container.getBoundingClientRect();
       const snapLineY = containerRect.top + (window.innerHeight * 0.30);
 
-      // Find the item closest to the snap line
-      let closestItem = null;
-      let closestDistance = Infinity;
-      let closestIndex = 0;
+      // Find item at snap line with 25% threshold
+      let selectedIndex = 0;
 
-      items.forEach((item, idx) => {
-        const itemRect = item.getBoundingClientRect();
-        const distance = Math.abs(itemRect.top - snapLineY);
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestItem = item;
-          closestIndex = idx;
+      for (let idx = 0; idx < items.length; idx++) {
+        const itemRect = items[idx].getBoundingClientRect();
+        const itemHeight = itemRect.height;
+
+        // If snap line is above this item's top, check previous item
+        if (snapLineY < itemRect.top) {
+          // Snap line hasn't reached this item yet
+          break;
         }
-      });
 
-      if (closestItem && closestIndex !== SideListState.getSelectedIndex()) {
-        // Update state without re-rendering (just update selection visually)
-        SideListState.setSelectedIndex(closestIndex);
+        // How far into this item is the snap line? (0 to 1)
+        const progressIntoItem = (snapLineY - itemRect.top) / itemHeight;
+
+        // If we're 25% or more into this item, select it
+        if (progressIntoItem >= 0.25) {
+          selectedIndex = idx;
+        }
+      }
+
+      if (selectedIndex !== SideListState.getSelectedIndex()) {
+        // Update state
+        SideListState.setSelectedIndex(selectedIndex);
 
         // Update visual selection
         items.forEach((item, idx) => {
-          item.classList.toggle('selected', idx === closestIndex);
+          item.classList.toggle('selected', idx === selectedIndex);
         });
 
         // Update content view for the new selection

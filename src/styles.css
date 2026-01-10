@@ -223,7 +223,7 @@ body.browser-mode #intro {
   padding: 30vh 0 70vh 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  scroll-snap-type: y mandatory;
+  scroll-snap-type: y proximity;
   scroll-padding-top: 30vh;
 }
 
