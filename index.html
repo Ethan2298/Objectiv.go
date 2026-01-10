@@ -857,7 +857,11 @@
             <i data-lucide="${itemData.isExpanded ? 'folder-open' : 'folder'}" class="folder-icon"></i>
             <span class="side-item-name">${itemData.name}</span>${indicator}
           `;
-          item.onclick = () => handleSideItemClick(idx, itemData);
+          item.onclick = async (e) => {
+            e.stopPropagation();
+            SideListState.toggleExpanded(itemData.path);
+            await renderSideList();
+          };
           break;
 
         case ItemType.FILE:
@@ -926,7 +930,7 @@
         }
       }
 
-      // Scroll clicked item to the 30vh snap line (fast animation)
+      // Scroll clicked item to the 30vh snap line (smooth animation)
       const container = document.getElementById('side-list-items');
       const items = container?.querySelectorAll('.side-item');
       if (container && items && items[idx]) {
@@ -934,13 +938,14 @@
         const targetScroll = idx === 0 ? 0 : items[idx].offsetTop - snapOffset + container.offsetTop;
         const startScroll = container.scrollTop;
         const distance = targetScroll - startScroll;
-        const duration = 80; // ms - very fast
+        const duration = 200; // ms - smooth
         const startTime = performance.now();
 
         function animateScroll(currentTime) {
           const elapsed = currentTime - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          const eased = 1 - Math.pow(1 - progress, 2);
+          // Ease-out cubic for smooth deceleration
+          const eased = 1 - Math.pow(1 - progress, 3);
           container.scrollTop = startScroll + distance * eased;
           if (progress < 1) {
             requestAnimationFrame(animateScroll);
