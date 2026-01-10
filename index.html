@@ -1507,26 +1507,19 @@
       const containerRect = container.getBoundingClientRect();
       const snapLineY = containerRect.top + (window.innerHeight * 0.30);
 
-      // Find item at snap line with 25% threshold
+      // Find the next item at/below the snap line (the one coming into view)
       let selectedIndex = 0;
 
       for (let idx = 0; idx < items.length; idx++) {
         const itemRect = items[idx].getBoundingClientRect();
-        const itemHeight = itemRect.height;
 
-        // If snap line is above this item's top, check previous item
-        if (snapLineY < itemRect.top) {
-          // Snap line hasn't reached this item yet
+        // Select the first item whose top is at or below the snap line
+        if (itemRect.top >= snapLineY) {
+          selectedIndex = idx;
           break;
         }
-
-        // How far into this item is the snap line? (0 to 1)
-        const progressIntoItem = (snapLineY - itemRect.top) / itemHeight;
-
-        // If snap line touches this item at all, select it
-        if (progressIntoItem >= 0) {
-          selectedIndex = idx;
-        }
+        // If we pass the snap line, keep this as fallback
+        selectedIndex = idx;
       }
 
       if (selectedIndex !== SideListState.getSelectedIndex()) {
