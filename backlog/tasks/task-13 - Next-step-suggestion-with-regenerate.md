@@ -8,7 +8,8 @@ labels:
   - feature
   - llm
 priority: medium
-dependencies: []
+dependencies:
+  - task-15
 ---
 
 ## Description
