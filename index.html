@@ -864,7 +864,7 @@
           item.dataset.type = 'files-header';
           item.innerHTML = `
             <i data-lucide="${itemData.isCollapsed ? 'folder' : 'folder-open'}" class="folder-icon"></i>
-            <span class="side-item-name">FILES</span>${indicator}${itemData.rootPath ? `<span class="folder-path" title="${itemData.rootPath}">${getShortPath(itemData.rootPath)}</span>` : ''}
+            <span class="side-item-name">FILES</span>${indicator}
           `;
           item.onclick = async (e) => {
             e.stopPropagation();
@@ -2268,10 +2268,11 @@
     async function init() {
       await showIntro();
 
-      // In browser mode, always use dummy folder data
+      // Enable demo mode with dummy data (works in both browser and Electron)
       const FolderExplorer = window.Objectiv?.FolderExplorer;
       const SideListState = window.Objectiv?.SideListState;
-      if (FolderExplorer?.isDummyMode?.() && SideListState) {
+      if (FolderExplorer && SideListState) {
+        FolderExplorer.setDemoMode?.(true);
         const dummyRoot = FolderExplorer.getDummyRootPath?.() || '/notes';
         FolderExplorer.clearCache?.();
         FolderExplorer.setRootPath?.(dummyRoot);

@@ -975,9 +975,8 @@ export async function loadDirectory(dirPath) {
     return cached;
   }
 
-  // Check if Electron API is available
-  if (!window.electronAPI?.folderExplorer) {
-    // Browser mode: use dummy folder structure
+  // Demo mode: use dummy folder structure
+  if (isDummyMode()) {
     const dummyContents = DUMMY_FOLDER_STRUCTURE[dirPath];
     if (dummyContents) {
       state.cache.set(dirPath, dummyContents);
@@ -986,6 +985,7 @@ export async function loadDirectory(dirPath) {
     return [];
   }
 
+  // Electron mode: use real filesystem
   const result = await window.electronAPI.folderExplorer.readDir(dirPath);
   if (result.success) {
     state.cache.set(dirPath, result.items);
@@ -997,16 +997,21 @@ export async function loadDirectory(dirPath) {
 }
 
 /**
- * Read file contents (with dummy data fallback for browser mode)
+ * Read file contents (with dummy data fallback for demo mode)
  */
 export async function readFile(filePath) {
-  if (!window.electronAPI?.folderExplorer?.readFile) {
-    // Browser mode: use dummy file contents
+  // Demo mode: use dummy file contents
+  if (isDummyMode()) {
     const content = DUMMY_FILE_CONTENTS[filePath];
     if (content !== undefined) {
       return { success: true, content };
     }
     return { success: false, error: 'File not found' };
+  }
+
+  // Electron mode: use real filesystem
+  if (!window.electronAPI?.folderExplorer?.readFile) {
+    return { success: false, error: 'File reading not available' };
   }
   return await window.electronAPI.folderExplorer.readFile(filePath);
 }
@@ -1184,9 +1189,17 @@ export function getDummyFileContent(filePath) {
   return DUMMY_FILE_CONTENTS[filePath];
 }
 
-// Check if running in browser mode with dummy data
+// Check if running in demo mode (browser or forced demo)
 export function isDummyMode() {
-  return !window.electronAPI?.folderExplorer;
+  return state.demoMode || !window.electronAPI?.folderExplorer;
+}
+
+// Enable/disable demo mode (for using dummy data in Electron)
+export function setDemoMode(enabled) {
+  state.demoMode = enabled;
+  if (enabled) {
+    clearCache();
+  }
 }
 
 // Get the default dummy root path
@@ -1231,6 +1244,7 @@ export default {
   getExtension,
   getDummyFileContent,
   isDummyMode,
+  setDemoMode,
   getDummyRootPath,
 
   // Init
