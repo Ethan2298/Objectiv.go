@@ -394,7 +394,7 @@ body.browser-mode #intro {
   align-items: center;
   justify-content: flex-start;
   height: 100%;
-  padding-top: 30vh;
+  padding-top: calc(30vh - 81px);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
@@ -409,15 +409,14 @@ body.browser-mode #intro {
 #content-page {
   max-width: 720px;
   width: 100%;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  padding-top: 24px;
-  padding-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: #0d0d0f;
+  padding: 80px 96px 96px 96px;
   flex-shrink: 0;
 }
 
 #content-header {
-  padding: 0 40px 12px 40px;
+  padding: 0 0 12px 0;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -459,7 +458,7 @@ body.browser-mode #intro {
 
 #content-body {
   flex-shrink: 0;
-  padding: 0 40px 16px 40px;
+  padding: 0;
 }
 
 /* ========================================
