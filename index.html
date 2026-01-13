@@ -2223,51 +2223,60 @@
 
     /**
      * Update visual selection only - NO content loading
-     * This runs on every scroll frame but is very lightweight
+     * Throttled via RAF to prevent layout thrashing
      */
+    let _rafPending = false;
     function updateVisualSelection() {
-      const container = document.getElementById('side-list-items');
-      if (!container) return;
+      if (_rafPending) return;
+      _rafPending = true;
 
-      const items = container.querySelectorAll('.side-item');
-      if (!items.length) return;
+      requestAnimationFrame(() => {
+        _rafPending = false;
 
-      const SideListState = window.Objectiv?.SideListState;
-      if (!SideListState) return;
+        const container = document.getElementById('side-list-items');
+        if (!container) return;
 
-      // The snap line is at 30vh from container top
-      const containerRect = container.getBoundingClientRect();
-      const snapLineY = containerRect.top + (window.innerHeight * 0.30);
+        const items = container.querySelectorAll('.side-item');
+        if (!items.length) return;
 
-      // Find the item at the snap line
-      let selectedIndex = 0;
+        const SideListState = window.Objectiv?.SideListState;
+        if (!SideListState) return;
 
-      if (container.scrollTop <= 5) {
-        selectedIndex = 0;
-      } else {
-        for (let idx = 0; idx < items.length; idx++) {
-          const itemRect = items[idx].getBoundingClientRect();
-          if (itemRect.top >= snapLineY - 5) {
+        // BATCH READ: Get all measurements first (before any writes)
+        const containerRect = container.getBoundingClientRect();
+        const snapLineY = containerRect.top + (window.innerHeight * 0.30);
+        const scrollTop = container.scrollTop;
+
+        // Find the item at the snap line
+        let selectedIndex = 0;
+
+        if (scrollTop <= 5) {
+          selectedIndex = 0;
+        } else {
+          for (let idx = 0; idx < items.length; idx++) {
+            const itemRect = items[idx].getBoundingClientRect();
+            if (itemRect.top >= snapLineY - 5) {
+              selectedIndex = idx;
+              break;
+            }
             selectedIndex = idx;
-            break;
           }
-          selectedIndex = idx;
         }
-      }
 
-      // Only update if selection changed
-      if (selectedIndex !== SideListState.getSelectedIndex()) {
-        SideListState.setSelectedIndex(selectedIndex);
-        playNotch();
+        // Only update if selection changed
+        const prevIndex = SideListState.getSelectedIndex();
+        if (selectedIndex !== prevIndex) {
+          SideListState.setSelectedIndex(selectedIndex);
+          playNotch();
 
-        // INSTANT: Update visual selection (CSS class toggle only)
-        items.forEach((item, idx) => {
-          item.classList.toggle('selected', idx === selectedIndex);
-        });
+          // BATCH WRITE: Update classes (only changed items)
+          if (items[prevIndex]) items[prevIndex].classList.remove('selected');
+          if (items[selectedIndex]) items[selectedIndex].classList.add('selected');
 
-        // DEFERRED: Schedule content loading after scroll settles
-        scheduleContentLoad(selectedIndex);
-      }
+          // DEFERRED: Schedule content loading after scroll settles
+          scheduleContentLoad(selectedIndex);
+        }
+      });
     }
 
     /**
