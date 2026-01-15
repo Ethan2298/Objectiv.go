@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="icon" href="data:,">
   <title>Objectiv</title>
   <link rel="stylesheet" href="src/styles.css">
@@ -309,6 +309,19 @@
         }
       });
     })();
+
+    // ========================================
+    // PREVENT BROWSER ZOOM
+    // ========================================
+    document.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+      }
+    });
 
     // ========================================
     // MOBILE RESPONSIVE NAVIGATION
