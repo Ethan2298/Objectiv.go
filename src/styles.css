@@ -1535,6 +1535,31 @@ body.light-mode .excel-table tbody tr:hover td {
     padding-top: 0;
   }
 
+  /* Normal scrollable menu (no dial selector) */
+  #side-list-items {
+    padding: 8px 0;
+    scroll-snap-type: none;
+    scroll-padding-top: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100%;
+  }
+
+  .side-item {
+    scroll-snap-align: none;
+    scroll-snap-stop: normal;
+  }
+
+  /* No selection state on mobile - just tap to navigate */
+  .side-item.selected {
+    font-weight: inherit;
+    color: inherit;
+  }
+  .side-item-indicator {
+    display: none !important;
+  }
+
   /* Touch-friendly targets (48px min) */
   .side-item {
     padding: 12px 16px;

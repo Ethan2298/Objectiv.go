@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
   <title>Objectiv</title>
   <link rel="stylesheet" href="src/styles.css">
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -937,7 +938,8 @@
       // Build all items in a fragment first (no DOM until complete)
       const fragment = document.createDocumentFragment();
       items.forEach((itemData, idx) => {
-        const isSelected = idx === selectedIdx;
+        // No selection state on mobile - just tap to navigate
+        const isSelected = !isMobile && idx === selectedIdx;
         const element = createSideListItem(itemData, idx, isSelected);
         fragment.appendChild(element);
       });
@@ -1074,7 +1076,10 @@
     }
 
     // Update visual selection without full re-render
+    // Desktop only - mobile has no selection state
     function updateSideListSelection() {
+      if (isMobile) return;
+
       const SideListState = window.Objectiv?.SideListState;
       if (!SideListState) return;
 
@@ -1097,7 +1102,8 @@
     function renderSideListBasic(container) {
       data.objectives.forEach((obj, index) => {
         const item = document.createElement('div');
-        item.className = 'side-item' + (index === selectedObjectiveIndex ? ' selected' : '');
+        // No selection state on mobile
+        item.className = 'side-item' + (!isMobile && index === selectedObjectiveIndex ? ' selected' : '');
         item.innerHTML = `
           <span class="side-item-name">${obj.name}</span>
           <span class="side-item-indicator">●</span>
@@ -2028,14 +2034,16 @@
     }
 
     // Listen for scroll - visual updates only, content deferred
+    // Desktop only - mobile uses tap-to-select
     const sideListItems = document.getElementById('side-list-items');
-    if (sideListItems) {
+    if (sideListItems && !isMobile) {
       sideListItems.addEventListener('scroll', updateVisualSelection, { passive: true });
     }
 
     // ========================================
     // WHEEL HANDLER - Velocity-based sensitivity (like game aim sensitivity)
     // Slow = precise one-by-one, Fast = accelerated scrolling
+    // Desktop only - mobile uses normal touch scrolling
     // ========================================
     let _wheelDelta = 0;
     let _lastWheelTime = 0;
@@ -2047,7 +2055,7 @@
     const WHEEL_VELOCITY_DECAY = 0.85;  // How fast velocity decays between events
     const WHEEL_VELOCITY_SCALE = 0.4;   // How much each scroll adds to velocity
 
-    if (sideListItems) {
+    if (sideListItems && !isMobile) {
       sideListItems.addEventListener('wheel', (e) => {
         e.preventDefault(); // Take control of scrolling
 
