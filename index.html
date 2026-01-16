@@ -78,9 +78,6 @@
       <div id="shortcuts"></div>
     </div>
 
-    <!-- Theme Toggle (independent, fixed position) -->
-    <button id="theme-toggle" title="Toggle theme">☀</button>
-
     <!-- Message Toast -->
     <div id="message-toast"></div>
 
@@ -2642,5 +2639,7 @@
 
     init();
   </script>
+  <!-- Theme Toggle (direct child of body for reliable fixed positioning) -->
+  <button id="theme-toggle" title="Toggle theme">☀</button>
 </body>
 </html>
