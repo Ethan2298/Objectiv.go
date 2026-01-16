@@ -17,12 +17,14 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // Types
 interface Priority {
+  [key: string]: unknown;
   id: string;
   name: string;
   description: string;
 }
 
 interface Step {
+  [key: string]: unknown;
   id: string;
   name: string;
   loggedAt: string;
@@ -34,11 +36,13 @@ interface Step {
 }
 
 interface NextStep {
+  [key: string]: unknown;
   text: string;
   elapsedSeconds: number;
 }
 
 interface Objective {
+  [key: string]: unknown;
   id: string;
   name: string;
   description: string;
@@ -112,7 +116,64 @@ async function getObjectiveById(id: string): Promise<Objective | null> {
   };
 }
 
+async function createNewObjective(name: string, description: string): Promise<Objective> {
+  const client = getClient();
+  const now = new Date().toISOString();
+
+  const { data, error } = await client
+    .from("objectives")
+    .insert({
+      name,
+      description,
+      priorities: [],
+      steps: [],
+      next_step: null,
+      created_at: now,
+      updated_at: now,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create objective: ${error.message}`);
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || "",
+    priorities: [],
+    steps: [],
+    nextStep: null,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+async function saveObjective(objective: Objective): Promise<void> {
+  const client = getClient();
+  const { error } = await client
+    .from("objectives")
+    .update({
+      name: objective.name,
+      description: objective.description,
+      priorities: objective.priorities,
+      steps: objective.steps,
+      next_step: objective.nextStep,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", objective.id);
+
+  if (error) {
+    throw new Error(`Failed to save objective: ${error.message}`);
+  }
+}
+
 // Helper functions
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -346,6 +407,479 @@ Returns:
       return {
         content: [{ type: "text", text: `Error: ${message}` }],
       };
+    }
+  }
+);
+
+// ========================================
+// Write Tools
+// ========================================
+
+// Create Objective
+server.registerTool(
+  "objectiv_create_objective",
+  {
+    title: "Create Objective",
+    description: `Create a new objective.
+
+Args:
+  - name (string): The name/title of the objective
+  - description (string, optional): Detailed description
+
+Returns:
+  The newly created objective with its generated ID`,
+    inputSchema: z.object({
+      name: z.string().min(1, "Name is required").describe("The name of the objective"),
+      description: z.string().default("").describe("Optional description"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await createNewObjective(params.name, params.description);
+      return {
+        content: [{ type: "text", text: JSON.stringify(objective, null, 2) }],
+        structuredContent: objective,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: "text", text: `Error: ${message}` }],
+      };
+    }
+  }
+);
+
+// Update Objective
+server.registerTool(
+  "objectiv_update_objective",
+  {
+    title: "Update Objective",
+    description: `Update an objective's name and/or description.
+
+Args:
+  - id (string): The objective UUID
+  - name (string, optional): New name
+  - description (string, optional): New description
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      id: z.string().min(1, "Objective ID is required"),
+      name: z.string().optional().describe("New name"),
+      description: z.string().optional().describe("New description"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      if (params.name !== undefined) objective.name = params.name;
+      if (params.description !== undefined) objective.description = params.description;
+
+      await saveObjective(objective);
+      return {
+        content: [{ type: "text", text: JSON.stringify(objective, null, 2) }],
+        structuredContent: objective,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Set Next Step
+server.registerTool(
+  "objectiv_set_next_step",
+  {
+    title: "Set Next Step",
+    description: `Set or clear the next step for an objective.
+
+Args:
+  - objective_id (string): The objective UUID
+  - text (string): The next step text. Pass empty string to clear.
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      text: z.string().describe("Next step text (empty to clear)"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      if (params.text === "") {
+        objective.nextStep = null;
+      } else {
+        objective.nextStep = {
+          text: params.text,
+          elapsedSeconds: objective.nextStep?.elapsedSeconds || 0,
+        };
+      }
+
+      await saveObjective(objective);
+      return {
+        content: [{ type: "text", text: JSON.stringify(objective, null, 2) }],
+        structuredContent: objective,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Add Step
+server.registerTool(
+  "objectiv_add_step",
+  {
+    title: "Add Step",
+    description: `Add a new step to an objective.
+
+Args:
+  - objective_id (string): The objective UUID
+  - name (string): The step name/description
+  - status (string, optional): pending, paused, or completed (default: pending)
+
+Returns:
+  The updated objective with the new step`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      name: z.string().min(1, "Step name is required"),
+      status: z.enum(["pending", "paused", "completed"]).default("pending"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const now = new Date().toISOString();
+      const newStep: Step = {
+        id: generateId(),
+        name: params.name,
+        loggedAt: now,
+        orderNumber: objective.steps.length + 1,
+        status: params.status,
+        elapsed: 0,
+        startedAt: null,
+        completedAt: params.status === "completed" ? now : null,
+      };
+
+      objective.steps.push(newStep);
+      await saveObjective(objective);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify({ step: newStep, objective }, null, 2) }],
+        structuredContent: { step: newStep, objective },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Update Step
+server.registerTool(
+  "objectiv_update_step",
+  {
+    title: "Update Step",
+    description: `Update a step's name or status.
+
+Args:
+  - objective_id (string): The objective UUID
+  - step_id (string): The step ID
+  - name (string, optional): New name
+  - status (string, optional): pending, paused, or completed
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      step_id: z.string().min(1, "Step ID is required"),
+      name: z.string().optional(),
+      status: z.enum(["pending", "paused", "completed"]).optional(),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const step = objective.steps.find((s) => s.id === params.step_id);
+      if (!step) {
+        return { content: [{ type: "text", text: `Error: Step not found` }] };
+      }
+
+      if (params.name !== undefined) step.name = params.name;
+      if (params.status !== undefined) {
+        step.status = params.status;
+        if (params.status === "completed" && !step.completedAt) {
+          step.completedAt = new Date().toISOString();
+        }
+      }
+
+      await saveObjective(objective);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ step, objective }, null, 2) }],
+        structuredContent: { step, objective },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Delete Step
+server.registerTool(
+  "objectiv_delete_step",
+  {
+    title: "Delete Step",
+    description: `Remove a step from an objective.
+
+Args:
+  - objective_id (string): The objective UUID
+  - step_id (string): The step ID to delete
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      step_id: z.string().min(1, "Step ID is required"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const stepIndex = objective.steps.findIndex((s) => s.id === params.step_id);
+      if (stepIndex === -1) {
+        return { content: [{ type: "text", text: `Error: Step not found` }] };
+      }
+
+      objective.steps.splice(stepIndex, 1);
+      // Renumber remaining steps
+      objective.steps.forEach((s, i) => (s.orderNumber = i + 1));
+
+      await saveObjective(objective);
+      return {
+        content: [{ type: "text", text: JSON.stringify(objective, null, 2) }],
+        structuredContent: objective,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Add Priority
+server.registerTool(
+  "objectiv_add_priority",
+  {
+    title: "Add Priority",
+    description: `Add a new priority to an objective.
+
+Args:
+  - objective_id (string): The objective UUID
+  - name (string): The priority name
+  - description (string, optional): Priority description
+
+Returns:
+  The updated objective with the new priority`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      name: z.string().min(1, "Priority name is required"),
+      description: z.string().default(""),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const newPriority: Priority = {
+        id: generateId(),
+        name: params.name,
+        description: params.description,
+      };
+
+      objective.priorities.push(newPriority);
+      await saveObjective(objective);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify({ priority: newPriority, objective }, null, 2) }],
+        structuredContent: { priority: newPriority, objective },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Update Priority
+server.registerTool(
+  "objectiv_update_priority",
+  {
+    title: "Update Priority",
+    description: `Update a priority's name or description.
+
+Args:
+  - objective_id (string): The objective UUID
+  - priority_id (string): The priority ID
+  - name (string, optional): New name
+  - description (string, optional): New description
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      priority_id: z.string().min(1, "Priority ID is required"),
+      name: z.string().optional(),
+      description: z.string().optional(),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const priority = objective.priorities.find((p) => p.id === params.priority_id);
+      if (!priority) {
+        return { content: [{ type: "text", text: `Error: Priority not found` }] };
+      }
+
+      if (params.name !== undefined) priority.name = params.name;
+      if (params.description !== undefined) priority.description = params.description;
+
+      await saveObjective(objective);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ priority, objective }, null, 2) }],
+        structuredContent: { priority, objective },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
+    }
+  }
+);
+
+// Delete Priority
+server.registerTool(
+  "objectiv_delete_priority",
+  {
+    title: "Delete Priority",
+    description: `Remove a priority from an objective.
+
+Args:
+  - objective_id (string): The objective UUID
+  - priority_id (string): The priority ID to delete
+
+Returns:
+  The updated objective`,
+    inputSchema: z.object({
+      objective_id: z.string().min(1, "Objective ID is required"),
+      priority_id: z.string().min(1, "Priority ID is required"),
+    }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (params) => {
+    try {
+      const objective = await getObjectiveById(params.objective_id);
+      if (!objective) {
+        return { content: [{ type: "text", text: `Error: Objective not found` }] };
+      }
+
+      const priorityIndex = objective.priorities.findIndex((p) => p.id === params.priority_id);
+      if (priorityIndex === -1) {
+        return { content: [{ type: "text", text: `Error: Priority not found` }] };
+      }
+
+      objective.priorities.splice(priorityIndex, 1);
+      await saveObjective(objective);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(objective, null, 2) }],
+        structuredContent: objective,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: "text", text: `Error: ${message}` }] };
     }
   }
 );
