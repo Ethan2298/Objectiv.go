@@ -60,7 +60,6 @@ export async function loadAllObjectives() {
       id: row.id,
       name: row.name || '',
       description: row.description || '',
-      clarityScore: row.clarity_score,
       priorities: row.priorities || [],
       steps: row.steps || [],
       nextStep: row.next_step || null,
@@ -92,7 +91,6 @@ export async function saveObjective(objective) {
   const record = {
     name: objective.name,
     description: objective.description || '',
-    clarity_score: objective.clarityScore ?? null,
     priorities: objective.priorities || [],
     steps: objective.steps || [],
     next_step: objective.nextStep || null,

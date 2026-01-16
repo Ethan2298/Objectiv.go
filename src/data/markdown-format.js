@@ -307,8 +307,7 @@ export function parseObjectiveMarkdown(content) {
       currentPriority = {
         id: frontmatterPriority.id || generateId(),
         name: priorityName,
-        description: '',
-        clarityScore: frontmatterPriority.clarityScore
+        description: ''
       };
       priorities.push(currentPriority);
       continue;
@@ -378,7 +377,6 @@ export function parseObjectiveMarkdown(content) {
     id: frontmatter.id || generateId(),
     name: objectiveName,
     description: objectiveDescription,
-    clarityScore: frontmatter.clarityScore,
     createdAt: frontmatter.createdAt,
     updatedAt: frontmatter.updatedAt,
     priorities,
@@ -425,7 +423,6 @@ export function serializeObjective(objective) {
   // Build frontmatter data
   const frontmatterData = {
     id: objective.id,
-    clarityScore: objective.clarityScore ?? null,
     createdAt: objective.createdAt || now,
     updatedAt: now
   };
@@ -441,8 +438,7 @@ export function serializeObjective(objective) {
   // Add priorities metadata
   if (objective.priorities && objective.priorities.length > 0) {
     frontmatterData.priorities = objective.priorities.map(p => ({
-      id: p.id,
-      clarityScore: p.clarityScore ?? null
+      id: p.id
     }));
   }
 

@@ -5,9 +5,6 @@
  * Used for objectives, priorities, and steps.
  */
 
-// CLARITY_DISABLED: Import no longer needed - see "Archived code/clarity-badge-scoring.md"
-// import { calculateClarity } from '../data/repository.js';
-
 /**
  * Create a modular list item element
  * @param {Object} options
@@ -72,12 +69,9 @@ export function createListItem(options = {}) {
 }
 
 /**
- * CLARITY_DISABLED: Get clarity meta HTML for list items
- * Now returns only edit button (clarity scoring disabled)
- * See "Archived code/clarity-badge-scoring.md" for original implementation
+ * Get meta HTML for list items (edit button)
  */
-export function getClarityMeta(item, section = 'objectives', index = 0) {
-  // CLARITY_DISABLED: Original showed score + badge, now just edit button
+export function getEditMeta(section = 'objectives', index = 0) {
   return `<span class="edit-btn" data-section="${section}" data-index="${index}">edit</span>`;
 }
 
@@ -96,6 +90,6 @@ export function createAddButton(text, onClick, disabled = false) {
 
 export default {
   createListItem,
-  getClarityMeta,
+  getEditMeta,
   createAddButton
 };

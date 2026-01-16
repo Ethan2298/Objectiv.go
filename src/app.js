@@ -13,7 +13,6 @@ import * as Repository from './data/repository.js';
 import * as State from './state/store.js';
 import * as SideListState from './state/side-list-state.js';
 import * as Utils from './utils.js';
-import * as Clarity from './clarity.js';
 import * as ListItem from './components/list-item.js';
 import * as EditController from './controllers/edit-controller.js';
 import * as Markdown from './utils/markdown.js';
@@ -28,7 +27,6 @@ window.Objectiv = {
   State,
   SideListState,
   Utils,
-  Clarity,
   ListItem,
   EditController,
   Markdown
@@ -43,14 +41,6 @@ window.Objectiv = {
  */
 export function init() {
   console.log('Objectiv modules loaded');
-
-  // Set up clarity score update callback
-  Clarity.setOnScoresUpdated(() => {
-    // Will be connected to updateView() when fully migrated
-    if (window.updateView) {
-      window.updateView();
-    }
-  });
 
   // Initialize side list state (unified navigation)
   SideListState.init();
@@ -72,7 +62,6 @@ export {
   State,
   SideListState,
   Utils,
-  Clarity,
   ListItem,
   EditController,
   Markdown
@@ -83,7 +72,6 @@ export default {
   State,
   SideListState,
   Utils,
-  Clarity,
   ListItem,
   EditController,
   Markdown,

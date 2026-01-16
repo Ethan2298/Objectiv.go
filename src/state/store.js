@@ -21,12 +21,6 @@ const state = {
     index: -1,       // Index of item being edited
     data: {},        // Additional edit context
     skipBlur: false  // Prevents stale blur handlers
-  },
-
-  // Clarity scoring queue
-  clarity: {
-    queue: [],
-    processing: false
   }
 };
 
@@ -48,14 +42,6 @@ export function isEditing() {
 
 export function isEditingItem(section, index) {
   return state.editing.section === section && state.editing.index === index;
-}
-
-export function getClarityQueue() {
-  return [...state.clarity.queue];
-}
-
-export function isClarityProcessing() {
-  return state.clarity.processing;
 }
 
 // ========================================
@@ -138,45 +124,6 @@ export function commitEdit() {
 }
 
 // ========================================
-// Actions - Clarity Queue
-// ========================================
-
-/**
- * Add item to clarity scoring queue
- */
-export function enqueueClarityItem(item) {
-  if (!item._clarityQueued && !item._clarityLoading) {
-    item._clarityQueued = true;
-    state.clarity.queue.push(item);
-  }
-}
-
-/**
- * Get next item from clarity queue
- */
-export function dequeueClarityItem() {
-  const item = state.clarity.queue.shift();
-  if (item) {
-    item._clarityQueued = false;
-  }
-  return item;
-}
-
-/**
- * Set clarity processing state
- */
-export function setClarityProcessing(value) {
-  state.clarity.processing = value;
-}
-
-/**
- * Check if clarity queue has items
- */
-export function hasClarityItems() {
-  return state.clarity.queue.length > 0;
-}
-
-// ========================================
 // Legacy Compatibility
 // ========================================
 
@@ -217,8 +164,6 @@ export default {
   getEditingState,
   isEditing,
   isEditingItem,
-  getClarityQueue,
-  isClarityProcessing,
 
   // Selection
   selectObjective,
@@ -231,12 +176,6 @@ export default {
   checkAndClearSkipBlur,
   cancelEdit,
   commitEdit,
-
-  // Clarity
-  enqueueClarityItem,
-  dequeueClarityItem,
-  setClarityProcessing,
-  hasClarityItems,
 
   // Legacy
   getLegacyPromptState,

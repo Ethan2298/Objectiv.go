@@ -38,28 +38,6 @@ export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
-/**
- * Calculate clarity level from score or description
- */
-export function calculateClarity(item) {
-  // Use cached LLM score if available
-  if (item.clarityScore !== undefined && item.clarityScore !== null) {
-    const score = item.clarityScore;
-    if (score <= 40) return 'fuzzy';
-    if (score <= 60) return 'less fuzzy';
-    if (score <= 80) return 'clear';
-    return 'very clear';
-  }
-
-  // Fallback to word count
-  const desc = item.description || '';
-  const wordCount = desc.trim().split(/\s+/).filter(w => w).length;
-  if (wordCount === 0) return 'fuzzy';
-  if (wordCount < 5) return 'less fuzzy';
-  if (wordCount < 15) return 'clear';
-  return 'very clear';
-}
-
 // ========================================
 // Dummy Data (disabled by default)
 // ========================================
@@ -80,11 +58,10 @@ function getDummyData() {
         id: 'obj1',
         name: 'Learn Rust programming',
         description: 'Master systems programming with Rust for building fast, reliable software',
-        clarityScore: 78,
         priorities: [
-          { id: 'p1a', name: 'Complete the Rust Book', description: 'Read through all chapters and do exercises', clarityScore: 85 },
-          { id: 'p1b', name: 'Build a CLI tool', description: 'Create a practical command-line application', clarityScore: 72 },
-          { id: 'p1c', name: 'Contribute to open source', description: 'Find a Rust project and submit a PR', clarityScore: 45 }
+          { id: 'p1a', name: 'Complete the Rust Book', description: 'Read through all chapters and do exercises' },
+          { id: 'p1b', name: 'Build a CLI tool', description: 'Create a practical command-line application' },
+          { id: 'p1c', name: 'Contribute to open source', description: 'Find a Rust project and submit a PR' }
         ],
         steps: [
           { id: 's1a', name: 'Installed rustup and cargo', loggedAt: twoDaysAgo.toISOString(), orderNumber: 1 },
@@ -96,10 +73,9 @@ function getDummyData() {
         id: 'obj2',
         name: 'Get in shape for summer',
         description: 'Build consistent exercise habits and improve overall fitness',
-        clarityScore: 62,
         priorities: [
-          { id: 'p2a', name: 'Exercise 4x per week', description: 'Mix of strength training and cardio', clarityScore: 80 },
-          { id: 'p2b', name: 'Track nutrition', description: 'Log meals and aim for balanced macros', clarityScore: 55 }
+          { id: 'p2a', name: 'Exercise 4x per week', description: 'Mix of strength training and cardio' },
+          { id: 'p2b', name: 'Track nutrition', description: 'Log meals and aim for balanced macros' }
         ],
         steps: [
           { id: 's2a', name: 'Signed up for gym membership', loggedAt: twoDaysAgo.toISOString(), orderNumber: 1 },
@@ -315,7 +291,6 @@ export default {
   invalidateCache,
   getStorageStatus,
   generateId,
-  calculateClarity,
   createObjective,
   createPriority,
   createStep
