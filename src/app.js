@@ -16,6 +16,8 @@ import * as ListItem from './components/list-item.js';
 import * as EditController from './controllers/edit-controller.js';
 import * as Markdown from './utils/markdown.js';
 import * as Constants from './constants.js';
+import * as ContextMenu from './components/context-menu.js';
+import * as DeleteModal from './components/delete-modal.js';
 
 // ========================================
 // Re-export for global access
@@ -29,7 +31,9 @@ window.Objectiv = {
   ListItem,
   EditController,
   Markdown,
-  Constants
+  Constants,
+  ContextMenu,
+  DeleteModal
 };
 
 // ========================================
@@ -64,7 +68,9 @@ export {
   ListItem,
   EditController,
   Markdown,
-  Constants
+  Constants,
+  ContextMenu,
+  DeleteModal
 };
 
 export default {
@@ -75,5 +81,7 @@ export default {
   EditController,
   Markdown,
   Constants,
+  ContextMenu,
+  DeleteModal,
   init
 };

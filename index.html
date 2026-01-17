@@ -1057,11 +1057,24 @@
             ${folderIcon}<span class="folder-name">${itemData.name || 'Unnamed Folder'}</span>${indicator}
           `;
 
-          // Click to expand/collapse
+          // Click to select folder and show in content area
           item.onclick = (e) => {
             e.stopPropagation();
-            SideListState.toggleFolder(itemData.folderId);
-            renderSideList();
+
+            // Clicking on folder icon toggles expansion
+            if (e.target.closest('.folder-icon')) {
+              SideListState.toggleFolder(itemData.folderId);
+              renderSideList();
+              return;
+            }
+
+            // Select the folder and show folder page
+            SideListState.setSelectedIndex(idx);
+            viewMode = 'folder';
+            updateSideListSelection();
+            renderContentView();
+
+            if (isMobile) setMobileView('detail');
           };
 
           // Right-click context menu for delete
@@ -1595,6 +1608,13 @@
             if (isMobile) setMobileView('detail');
             break;
 
+          case ItemType.FOLDER:
+            viewMode = 'folder';
+            renderContentView();
+            updateSideListSelection();
+            if (isMobile) setMobileView('detail');
+            break;
+
           case ItemType.ADD_OBJECTIVE:
             startAddObjective();
             break;
@@ -1707,7 +1727,11 @@
 
     // Render the content view (selected objective's details)
     function renderContentView() {
-      renderObjectiveView();
+      if (viewMode === 'folder') {
+        renderFolderView();
+      } else {
+        renderObjectiveView();
+      }
     }
 
     // Preview content on hover (shows content without changing selection)
@@ -1785,6 +1809,84 @@
       // Refresh clarity scores
       refreshClarity(obj);
       obj.priorities.forEach(p => refreshClarity(p));
+    }
+
+    // Render folder view (shows folder name and list of objectives in folder)
+    function renderFolderView() {
+      const SideListState = window.Objectiv?.SideListState;
+      const selectedItem = SideListState?.getSelectedItem();
+      const folder = selectedItem?.data;
+
+      const headerTitle = document.getElementById('content-header-title');
+      const headerDesc = document.getElementById('content-header-description');
+      const body = document.getElementById('content-body');
+
+      if (!folder) {
+        headerTitle.textContent = 'Select a folder';
+        headerDesc.textContent = '';
+        body.innerHTML = '';
+        return;
+      }
+
+      // Get objectives in this folder
+      const folderObjectives = data.objectives.filter(obj => obj.folderId === folder.id);
+
+      headerTitle.textContent = folder.name || 'Unnamed Folder';
+      headerDesc.textContent = folderObjectives.length === 1
+        ? '1 objective'
+        : `${folderObjectives.length} objectives`;
+
+      body.innerHTML = '';
+
+      // Render objectives list
+      if (folderObjectives.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'folder-empty-state';
+        emptyState.style.cssText = 'color: var(--text-secondary); padding: 2rem 0; text-align: center;';
+        emptyState.textContent = 'No objectives in this folder';
+        body.appendChild(emptyState);
+      } else {
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        header.textContent = 'OBJECTIVES';
+        body.appendChild(header);
+
+        folderObjectives.forEach((obj) => {
+          const objectiveItem = document.createElement('div');
+          objectiveItem.className = 'list-item folder-objective-item';
+          objectiveItem.style.cssText = 'cursor: pointer;';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'list-item-content';
+          nameSpan.textContent = obj.name;
+          objectiveItem.appendChild(nameSpan);
+
+          // Click to navigate to the objective
+          objectiveItem.onclick = () => {
+            const objIndex = data.objectives.indexOf(obj);
+            if (objIndex >= 0) {
+              selectedObjectiveIndex = objIndex;
+              viewMode = 'objective';
+
+              // Update side list selection to this objective
+              const flatList = SideListState.getFlatList();
+              const sideListIndex = flatList.findIndex(item =>
+                item.type === SideListState.ItemType.OBJECTIVE && item.objectiveId === obj.id
+              );
+              if (sideListIndex >= 0) {
+                SideListState.setSelectedIndex(sideListIndex);
+              }
+
+              updateSideListSelection();
+              renderContentView();
+
+              if (isMobile) setMobileView('detail');
+            }
+          };
+
+          body.appendChild(objectiveItem);
+        });
+      }
     }
 
     // Render priorities section in content view
@@ -2564,6 +2666,10 @@
         viewMode = 'objective';
         selectedFilePath = null;
         renderContentView();
+      } else if (selectedItem.type === SideListState.ItemType.FOLDER) {
+        viewMode = 'folder';
+        selectedFilePath = null;
+        renderContentView();
       } else if (selectedItem.type === SideListState.ItemType.FILE) {
         // selectFile already has its own debounce, call directly
         _selectFileActual(selectedItem.path, selectedItem.name);
@@ -2625,6 +2731,9 @@
             if (itemData?.type === SideListState.ItemType.OBJECTIVE) {
               selectedObjectiveIndex = itemData.index;
               viewMode = 'objective';
+              renderContentView();
+            } else if (itemData?.type === SideListState.ItemType.FOLDER) {
+              viewMode = 'folder';
               renderContentView();
             }
 
@@ -2872,6 +2981,102 @@
     }
 
     /**
+     * Start editing folder title in content header
+     */
+    function startEditFolderTitle() {
+      const SideListState = window.Objectiv?.SideListState;
+      const selectedItem = SideListState?.getSelectedItem();
+      const folder = selectedItem?.data;
+      if (!folder) return;
+
+      const titleEl = document.getElementById('content-header-title');
+      if (!titleEl) return;
+
+      // Don't start if already editing
+      if (promptMode) return;
+
+      // Set up prompt state
+      promptMode = 'edit';
+      promptStep = 0;
+      promptTargetIndex = null;
+      promptTargetSection = 'folders';
+      promptData = { type: 'folder', item: folder };
+
+      // Make element editable with spellcheck
+      titleEl.setAttribute('contenteditable', 'true');
+      titleEl.setAttribute('spellcheck', 'true');
+
+      // Focus and place cursor at end
+      titleEl.focus();
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(titleEl);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      // Blur handler as fallback
+      titleEl.addEventListener('blur', () => {
+        if (skipBlurHandler) {
+          skipBlurHandler = false;
+          return;
+        }
+        if (promptMode === 'edit' && promptTargetSection === 'folders') {
+          commitFolderTitleEdit();
+        }
+      }, { once: true });
+
+      updateStatusBar();
+    }
+
+    /**
+     * Commit folder title edit
+     */
+    async function commitFolderTitleEdit() {
+      if (promptTargetSection !== 'folders') return;
+      if (promptMode !== 'edit') return;
+
+      skipBlurHandler = true;
+
+      const titleEl = document.getElementById('content-header-title');
+      if (!titleEl) return;
+
+      const value = titleEl.textContent.trim();
+      const folder = promptData?.item;
+
+      if (value && folder) {
+        // Update folder name in data.folders
+        const folderInData = data.folders.find(f => f.id === folder.id);
+        if (folderInData) {
+          folderInData.name = value;
+        }
+        folder.name = value;
+
+        // Save to database
+        const Repository = window.Objectiv?.Repository;
+        if (Repository?.updateFolder) {
+          try {
+            await Repository.updateFolder({ id: folder.id, name: value });
+          } catch (err) {
+            console.error('Failed to update folder:', err);
+          }
+        }
+
+        // Update sidebar
+        renderSideList();
+      } else if (folder) {
+        // Restore original if empty
+        titleEl.textContent = folder.name;
+      }
+
+      titleEl.removeAttribute('contenteditable');
+      titleEl.removeAttribute('spellcheck');
+
+      resetPromptState();
+      updateStatusBar();
+    }
+
+    /**
      * Main mousedown handler - single decision point for all edit interactions
      */
     document.addEventListener('mousedown', (e) => {
@@ -2886,11 +3091,17 @@
 
       // CASE 1: Not currently editing - just let clicks proceed normally
       if (!currentEditable || !promptMode) {
-        // If clicking the objective title, start editing it
-        if (clickedTitle && data.objectives.length > 0) {
-          e.preventDefault();
-          startEditObjectiveTitle();
-          return;
+        // If clicking the title, start editing it based on view mode
+        if (clickedTitle) {
+          if (viewMode === 'objective' && data.objectives.length > 0) {
+            e.preventDefault();
+            startEditObjectiveTitle();
+            return;
+          } else if (viewMode === 'folder') {
+            e.preventDefault();
+            startEditFolderTitle();
+            return;
+          }
         }
         // If clicking a list item, start editing it
         if (clickedListItem) {
@@ -2924,9 +3135,14 @@
         const section = clickedListItem.dataset.section;
         const index = parseInt(clickedListItem.dataset.index, 10);
 
-        // Handle objective title edit specially
+        // Handle title edits specially
         if (promptTargetSection === 'objectives') {
           commitObjectiveTitleEdit();
+          startEditInPlace(section, index, clickedListItem);
+          return;
+        }
+        if (promptTargetSection === 'folders') {
+          commitFolderTitleEdit();
           startEditInPlace(section, index, clickedListItem);
           return;
         }
@@ -2958,9 +3174,11 @@
 
       // CASE 4: Clicking on add option - commit and let add handler run
       if (clickedAddOption) {
-        // Handle objective title edit specially
+        // Handle title edits specially
         if (promptTargetSection === 'objectives') {
           commitObjectiveTitleEdit();
+        } else if (promptTargetSection === 'folders') {
+          commitFolderTitleEdit();
         } else {
           const { needsRerender } = commitEditInPlace();
           if (needsRerender) {
@@ -2973,9 +3191,11 @@
 
       // CASE 5: Clicking on side item - commit and let selection happen
       if (clickedSideItem) {
-        // Handle objective title edit specially
+        // Handle title edits specially
         if (promptTargetSection === 'objectives') {
           commitObjectiveTitleEdit();
+        } else if (promptTargetSection === 'folders') {
+          commitFolderTitleEdit();
         } else {
           const { needsRerender } = commitEditInPlace();
           if (needsRerender) {
@@ -2987,9 +3207,11 @@
       }
 
       // CASE 6: Clicking elsewhere (empty space) - just commit and close
-      // Handle objective title edit specially
+      // Handle title edits specially
       if (promptTargetSection === 'objectives') {
         commitObjectiveTitleEdit();
+      } else if (promptTargetSection === 'folders') {
+        commitFolderTitleEdit();
       } else {
         const { needsRerender } = commitEditInPlace();
         if (needsRerender) {
@@ -3029,6 +3251,30 @@
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             commitObjectiveTitleEdit();
+            return;
+          }
+          return;
+        }
+
+        // Special handling for folder title editing
+        if (promptMode === 'edit' && promptTargetSection === 'folders') {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            // Restore original and cancel
+            const titleEl = document.getElementById('content-header-title');
+            const folder = promptData?.item;
+            if (titleEl && folder) {
+              titleEl.textContent = folder.name;
+              titleEl.removeAttribute('contenteditable');
+              titleEl.removeAttribute('spellcheck');
+            }
+            resetPromptState();
+            updateStatusBar();
+            return;
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            commitFolderTitleEdit();
             return;
           }
           return;
