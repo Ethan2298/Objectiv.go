@@ -395,7 +395,7 @@
     let data = loadData();
 
     // Storage initialization (non-blocking)
-    // Runs after modules load, loads objectives from Supabase
+    // Runs after modules load, loads objectives and folders from Supabase
     async function initStorage() {
       if (!window.Objectiv?.Repository?.initializeData) {
         console.log('Repository module not loaded yet');
@@ -405,10 +405,18 @@
         const loadedData = await window.Objectiv.Repository.initializeData();
         if (loadedData && loadedData.objectives) {
           console.log('Loaded', loadedData.objectives.length, 'objectives from Supabase');
-          data = loadedData;
-          if (window.updateView) updateView();
-          updateStatusReporter();
+          data.objectives = loadedData.objectives;
         }
+
+        // Load folders
+        if (window.Objectiv?.Repository?.loadAllFolders) {
+          const folders = await window.Objectiv.Repository.loadAllFolders();
+          console.log('Loaded', folders.length, 'folders from Supabase');
+          data.folders = folders;
+        }
+
+        if (window.updateView) updateView();
+        updateStatusReporter();
 
         // Subscribe to realtime changes for live updates (MCP, other clients)
         if (window.Objectiv?.Repository?.subscribeToChanges) {
@@ -416,11 +424,22 @@
             console.log('Realtime update received, refreshing...');
             const reloadedData = await window.Objectiv.Repository.reloadData();
             if (reloadedData && reloadedData.objectives) {
-              data = reloadedData;
+              data.objectives = reloadedData.objectives;
               if (window.updateView) updateView();
             }
           });
           console.log('Subscribed to realtime updates');
+        }
+
+        // Subscribe to folder changes
+        if (window.Objectiv?.Repository?.subscribeToFolderChanges) {
+          window.Objectiv.Repository.subscribeToFolderChanges(async (payload) => {
+            console.log('Folder realtime update received, refreshing...');
+            const folders = await window.Objectiv.Repository.loadAllFolders();
+            data.folders = folders;
+            if (window.updateView) updateView();
+          });
+          console.log('Subscribed to folder realtime updates');
         }
       } catch (e) {
         console.warn('Storage init failed:', e);
@@ -458,7 +477,7 @@
     // Load data (synchronous initial load - real data loaded async by initMarkdownStorage)
     function loadData() {
       // Return empty data initially - initMarkdownStorage will load from files
-      return { objectives: [] };
+      return { objectives: [], folders: [] };
     }
 
     // Configuration: Set to true to enable dummy data (for testing only)
@@ -957,6 +976,7 @@
       const isAddingObjective = promptMode === 'add' && promptTargetSection === 'objectives';
       SideListState.rebuildItems({
         objectives: data.objectives,
+        folders: data.folders || [],
         isAddingObjective
       });
 
@@ -975,6 +995,15 @@
       // Swap content in one operation (prevents empty state flicker)
       container.innerHTML = '';
       container.appendChild(fragment);
+
+      // Add insertion indicator element for drag positioning
+      let insertIndicator = container.querySelector('.drag-insert-indicator');
+      if (!insertIndicator) {
+        insertIndicator = document.createElement('div');
+        insertIndicator.className = 'drag-insert-indicator';
+        container.style.position = 'relative';
+        container.appendChild(insertIndicator);
+      }
 
       // Initialize Lucide icons
       if (window.lucide) {
@@ -997,14 +1026,61 @@
       item.className = 'side-item' + (isSelected ? ' selected' : '');
       item.dataset.idx = idx;
 
+      // Set depth for indentation
+      if (itemData.depth !== undefined) {
+        item.dataset.depth = itemData.depth;
+      }
+
       // Selection indicator (always rendered, CSS controls visibility via .selected)
       const indicator = '<span class="side-item-indicator">●</span>';
 
       switch (itemData.type) {
+        case ItemType.UNFILED_HEADER:
+          item.className = 'side-item unfiled-header';
+          item.innerHTML = `<span class="side-item-name">Unfiled</span>`;
+          // Make unfiled area a drop target
+          item.dataset.dropTarget = 'unfiled';
+          setupDropTarget(item, 'unfiled', null);
+          break;
+
+        case ItemType.FOLDER:
+          const isExpanded = SideListState.isFolderExpanded(itemData.folderId);
+          item.className = 'side-item folder-row' + (isSelected ? ' selected' : '');
+          item.dataset.type = 'folder';
+          item.dataset.folderId = itemData.folderId;
+
+          const folderIcon = isExpanded
+            ? '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5Z"/><path d="M3 10h18"/></svg>'
+            : '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5Z"/></svg>';
+
+          item.innerHTML = `
+            ${folderIcon}<span class="folder-name">${itemData.name || 'Unnamed Folder'}</span>${indicator}
+          `;
+
+          // Click to expand/collapse
+          item.onclick = (e) => {
+            e.stopPropagation();
+            SideListState.toggleFolder(itemData.folderId);
+            renderSideList();
+          };
+
+          // Right-click context menu for delete
+          item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showFolderContextMenu(e, itemData);
+          });
+
+          // Make folder draggable and a drop target
+          setupDraggable(item, 'folder', itemData.folderId, itemData.data);
+          setupDropTarget(item, 'folder', itemData.folderId);
+          break;
+
         case ItemType.OBJECTIVE:
           const isEditing = promptMode === 'add' && promptTargetSection === 'objectives' && promptTargetIndex === itemData.index;
           item.dataset.type = 'objective';
           item.dataset.objIndex = itemData.index;
+          item.dataset.objectiveId = itemData.objectiveId;
+          item.dataset.folderId = itemData.folderId || '';
 
           if (isEditing) {
             item.innerHTML = `
@@ -1016,7 +1092,24 @@
               <span class="side-item-name">${itemData.name}</span>${indicator}
             `;
             item.onclick = () => handleSideItemClick(idx, itemData);
+
+            // Right-click context menu for delete
+            item.addEventListener('contextmenu', (e) => {
+              e.preventDefault();
+              showObjectiveContextMenu(e, itemData);
+            });
           }
+
+          // Make objectives draggable and drop targets (for position-aware reordering)
+          setupDraggable(item, 'objective', itemData.objectiveId, itemData.data);
+          setupDropTarget(item, 'objective', itemData.objectiveId);
+          break;
+
+        case ItemType.ADD_FOLDER:
+          item.className = 'side-item add-option add-folder' + (isSelected ? ' selected' : '');
+          item.dataset.type = 'add-folder';
+          item.innerHTML = `<svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 10v6m-3-3h6"/><path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5Z"/></svg><span class="side-item-name">Add folder</span>${indicator}`;
+          item.onclick = () => startAddFolder();
           break;
 
         case ItemType.ADD_OBJECTIVE:
@@ -1031,6 +1124,389 @@
       }
 
       return item;
+    }
+
+    // Show context menu for objectives (right-click)
+    function showObjectiveContextMenu(e, itemData) {
+      const ContextMenu = window.Objectiv?.ContextMenu;
+      const DeleteModal = window.Objectiv?.DeleteModal;
+
+      if (!ContextMenu) {
+        console.warn('ContextMenu module not loaded');
+        return;
+      }
+
+      ContextMenu.showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          {
+            label: 'Delete',
+            danger: true,
+            action: () => {
+              if (!DeleteModal) {
+                console.warn('DeleteModal module not loaded');
+                return;
+              }
+
+              DeleteModal.showDeleteModal({
+                itemName: itemData.name || 'Unnamed Objective',
+                itemType: 'objective',
+                onConfirm: async () => {
+                  try {
+                    // Find the objective in data
+                    const objective = data.objectives.find(o => o.id === itemData.objectiveId);
+                    if (!objective) {
+                      console.error('Objective not found:', itemData.objectiveId);
+                      return;
+                    }
+
+                    // Delete from storage
+                    if (window.Objectiv?.Repository?.deleteOneObjective) {
+                      await window.Objectiv.Repository.deleteOneObjective(objective);
+                    }
+
+                    // Remove from local data
+                    data.objectives = data.objectives.filter(o => o.id !== itemData.objectiveId);
+
+                    // Adjust selection if needed
+                    if (selectedObjectiveIndex >= data.objectives.length) {
+                      selectedObjectiveIndex = Math.max(0, data.objectives.length - 1);
+                    }
+
+                    // Refresh the view
+                    updateView();
+                    showToast('Objective deleted');
+                  } catch (err) {
+                    console.error('Failed to delete objective:', err);
+                    showToast('Failed to delete objective');
+                  }
+                }
+              });
+            }
+          }
+        ]
+      });
+    }
+
+    // Show context menu for folders (right-click)
+    function showFolderContextMenu(e, itemData) {
+      const ContextMenu = window.Objectiv?.ContextMenu;
+      const DeleteModal = window.Objectiv?.DeleteModal;
+
+      if (!ContextMenu) {
+        console.warn('ContextMenu module not loaded');
+        return;
+      }
+
+      ContextMenu.showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          {
+            label: 'Delete',
+            danger: true,
+            action: () => {
+              if (!DeleteModal) {
+                console.warn('DeleteModal module not loaded');
+                return;
+              }
+
+              DeleteModal.showDeleteModal({
+                itemName: itemData.name || 'Unnamed Folder',
+                itemType: 'folder',
+                onConfirm: async () => {
+                  try {
+                    // Delete from storage
+                    if (window.Objectiv?.Repository?.deleteFolder) {
+                      await window.Objectiv.Repository.deleteFolder(itemData.folderId);
+                    }
+
+                    // Remove from local data
+                    data.folders = data.folders.filter(f => f.id !== itemData.folderId);
+
+                    // Move any objectives in this folder to unfiled
+                    data.objectives.forEach(obj => {
+                      if (obj.folderId === itemData.folderId) {
+                        obj.folderId = null;
+                      }
+                    });
+
+                    // Refresh the view
+                    updateView();
+                    showToast('Folder deleted');
+                  } catch (err) {
+                    console.error('Failed to delete folder:', err);
+                    showToast('Failed to delete folder');
+                  }
+                }
+              });
+            }
+          }
+        ]
+      });
+    }
+
+    // Track current drag insert position (must be declared before setupDraggable)
+    let _dragInsertPosition = null;
+
+    // Hide the insertion indicator line (must be declared before setupDraggable)
+    function hideInsertionIndicator() {
+      const container = document.getElementById('side-list-items');
+      const indicator = container?.querySelector('.drag-insert-indicator');
+      if (indicator) {
+        indicator.classList.remove('visible');
+      }
+    }
+
+    // Setup drag and drop handlers
+    function setupDraggable(element, type, id, itemData) {
+      element.draggable = true;
+
+      element.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('application/json', JSON.stringify({ type, id }));
+        element.classList.add('dragging');
+        window._draggedItem = { type, id, data: itemData };
+      });
+
+      element.addEventListener('dragend', (e) => {
+        element.classList.remove('dragging');
+        window._draggedItem = null;
+        _dragInsertPosition = null;
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        document.querySelectorAll('.drag-over-folder').forEach(el => el.classList.remove('drag-over-folder'));
+        hideInsertionIndicator();
+      });
+    }
+
+    function setupDropTarget(element, targetType, targetId) {
+      element.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!window._draggedItem) return;
+
+        const { type: dragType, id: dragId } = window._draggedItem;
+
+        // Validate drop - can't drop on self
+        if (dragType === 'folder' && targetType === 'folder' && dragId === targetId) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
+        if (dragType === 'objective' && targetType === 'objective' && dragId === targetId) {
+          e.dataTransfer.dropEffect = 'none';
+          hideInsertionIndicator();
+          return;
+        }
+
+        e.dataTransfer.dropEffect = 'move';
+
+        // For objectives, calculate insert position (before/after)
+        if (targetType === 'objective' && dragType === 'objective') {
+          const rect = element.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          const position = e.clientY < midY ? 'before' : 'after';
+
+          // Get target's folder context
+          const targetFolderId = element.dataset.folderId || null;
+
+          _dragInsertPosition = {
+            targetId,
+            targetType,
+            position,
+            folderId: targetFolderId
+          };
+
+          showInsertionIndicator(element, position);
+          element.classList.remove('drag-over');
+        } else if (targetType === 'folder') {
+          // Dropping into a folder
+          element.classList.add('drag-over-folder');
+          hideInsertionIndicator();
+          _dragInsertPosition = {
+            targetId,
+            targetType: 'folder',
+            position: 'into',
+            folderId: targetId
+          };
+        } else {
+          element.classList.add('drag-over');
+          hideInsertionIndicator();
+          _dragInsertPosition = {
+            targetId,
+            targetType,
+            position: 'into',
+            folderId: null
+          };
+        }
+      });
+
+      element.addEventListener('dragleave', (e) => {
+        element.classList.remove('drag-over');
+        element.classList.remove('drag-over-folder');
+        // Don't hide indicator on leave - it may be transitioning between elements
+      });
+
+      element.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        element.classList.remove('drag-over');
+        element.classList.remove('drag-over-folder');
+        hideInsertionIndicator();
+
+        if (!window._draggedItem) return;
+
+        const { type: dragType, id: dragId, data: dragData } = window._draggedItem;
+        const insertPosition = _dragInsertPosition;
+        window._draggedItem = null;
+        _dragInsertPosition = null;
+
+        try {
+          if (dragType === 'objective') {
+            await handleObjectiveDrop(dragId, dragData, insertPosition);
+          } else if (dragType === 'folder') {
+            const newParentId = targetType === 'unfiled' ? null : targetId;
+            if (window.Objectiv?.Repository?.updateFolder) {
+              await window.Objectiv.Repository.updateFolder({ id: dragId, parentId: newParentId });
+              // Reload folders
+              const folders = await window.Objectiv.Repository.loadAllFolders();
+              data.folders = folders;
+              renderSideList();
+              console.log('Moved folder', dragId, 'to parent', newParentId || 'root');
+            }
+          }
+        } catch (err) {
+          console.error('Drop failed:', err);
+        }
+      });
+    }
+
+    // Show the insertion indicator line
+    function showInsertionIndicator(element, position) {
+      const container = document.getElementById('side-list-items');
+      const indicator = container.querySelector('.drag-insert-indicator');
+      if (!indicator) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+
+      // Position the indicator at the top or bottom of the element
+      const y = position === 'before'
+        ? elementRect.top - containerRect.top - 1
+        : elementRect.bottom - containerRect.top - 1;
+
+      indicator.style.top = `${y}px`;
+      indicator.classList.add('visible');
+    }
+
+    // Handle objective drop with position awareness
+    async function handleObjectiveDrop(dragId, dragData, insertPosition) {
+      if (!insertPosition) {
+        console.warn('No insert position for objective drop');
+        return;
+      }
+
+      const Repository = window.Objectiv?.Repository;
+      if (!Repository?.updateObjectiveOrder) {
+        console.warn('Repository.updateObjectiveOrder not available');
+        return;
+      }
+
+      const { targetId, targetType, position, folderId } = insertPosition;
+
+      // Determine the new folder (null for unfiled)
+      const newFolderId = targetType === 'unfiled' ? null :
+                          targetType === 'folder' ? targetId : folderId;
+
+      // Calculate the new order index
+      let newOrderIndex;
+
+      if (targetType === 'objective' && (position === 'before' || position === 'after')) {
+        // Dropping relative to another objective
+        newOrderIndex = calculateOrderIndex(targetId, position, newFolderId, data.objectives);
+      } else if (targetType === 'folder') {
+        // Dropping into a folder - append at end
+        newOrderIndex = calculateOrderIndexForFolderEnd(targetId, data.objectives);
+      } else {
+        // Dropping into unfiled - append at end
+        newOrderIndex = calculateOrderIndexForUnfiledEnd(data.objectives);
+      }
+
+      // Update the objective's order and folder
+      await Repository.updateObjectiveOrder(dragId, newOrderIndex, newFolderId);
+
+      // Reload and refresh
+      const reloadedData = await Repository.reloadData();
+      if (reloadedData) data.objectives = reloadedData.objectives;
+      renderSideList();
+
+      console.log('Reordered objective', dragId, 'to index', newOrderIndex, 'in folder', newFolderId || 'unfiled');
+    }
+
+    // Calculate order index for inserting before/after a target objective
+    function calculateOrderIndex(targetId, position, folderId, objectives) {
+      // Get objectives in the same context (folder), sorted by orderIndex
+      const contextObjs = objectives
+        .filter(o => (o.folderId || null) === folderId)
+        .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+      const targetIdx = contextObjs.findIndex(o => o.id === targetId);
+      if (targetIdx === -1) {
+        // Target not found, append at end with large gap
+        return (contextObjs.length + 1) * 1000;
+      }
+
+      const target = contextObjs[targetIdx];
+      const targetOrder = target.orderIndex || 0;
+
+      if (position === 'before') {
+        if (targetIdx === 0) {
+          // Insert before first item - use half of its order
+          return Math.floor(targetOrder / 2);
+        } else {
+          // Insert between previous and target
+          const prev = contextObjs[targetIdx - 1];
+          const prevOrder = prev.orderIndex || 0;
+          return Math.floor((prevOrder + targetOrder) / 2);
+        }
+      } else {
+        // position === 'after'
+        if (targetIdx === contextObjs.length - 1) {
+          // Insert after last item - add 1000
+          return targetOrder + 1000;
+        } else {
+          // Insert between target and next
+          const next = contextObjs[targetIdx + 1];
+          const nextOrder = next.orderIndex || 0;
+          return Math.floor((targetOrder + nextOrder) / 2);
+        }
+      }
+    }
+
+    // Calculate order index for appending to end of a folder
+    function calculateOrderIndexForFolderEnd(folderId, objectives) {
+      const folderObjs = objectives
+        .filter(o => o.folderId === folderId)
+        .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+      if (folderObjs.length === 0) {
+        return 1000;
+      }
+
+      const lastObj = folderObjs[folderObjs.length - 1];
+      return (lastObj.orderIndex || 0) + 1000;
+    }
+
+    // Calculate order index for appending to end of unfiled
+    function calculateOrderIndexForUnfiledEnd(objectives) {
+      const unfiledObjs = objectives
+        .filter(o => !o.folderId)
+        .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+      if (unfiledObjs.length === 0) {
+        return 1000;
+      }
+
+      const lastObj = unfiledObjs[unfiledObjs.length - 1];
+      return (lastObj.orderIndex || 0) + 1000;
     }
 
     // Handle click on side list item
@@ -1705,6 +2181,39 @@
       toast.textContent = text;
       toast.style.display = 'block';
       setTimeout(() => { toast.style.display = 'none'; }, duration);
+    }
+
+    // Start add folder
+    async function startAddFolder() {
+      // Prompt for folder name
+      const name = prompt('Folder name:');
+      if (!name || !name.trim()) return;
+
+      try {
+        if (window.Objectiv?.Repository?.createFolder) {
+          const folder = await window.Objectiv.Repository.createFolder({
+            name: name.trim(),
+            parentId: null,
+            orderIndex: data.folders.length
+          });
+          console.log('Created folder:', folder);
+
+          // Reload folders and refresh
+          const folders = await window.Objectiv.Repository.loadAllFolders();
+          data.folders = folders;
+
+          // Expand the new folder
+          const SideListState = window.Objectiv?.SideListState;
+          if (SideListState) {
+            SideListState.expandFolder(folder.id);
+          }
+
+          renderSideList();
+        }
+      } catch (err) {
+        console.error('Failed to create folder:', err);
+        alert('Failed to create folder: ' + err.message);
+      }
     }
 
     // Start add objective

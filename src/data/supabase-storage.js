@@ -48,7 +48,7 @@ export async function loadAllObjectives() {
     const { data, error } = await client
       .from('objectives')
       .select('*')
-      .order('created_at', { ascending: true });
+      .order('order_index', { ascending: true });
 
     if (error) {
       console.error('Failed to load objectives:', error);
@@ -63,6 +63,8 @@ export async function loadAllObjectives() {
       priorities: row.priorities || [],
       steps: row.steps || [],
       nextStep: row.next_step || null,
+      folderId: row.folder_id || null,
+      orderIndex: row.order_index || 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       _supabaseId: row.id // Track for updates
@@ -94,6 +96,8 @@ export async function saveObjective(objective) {
     priorities: objective.priorities || [],
     steps: objective.steps || [],
     next_step: objective.nextStep || null,
+    folder_id: objective.folderId || null,
+    order_index: objective.orderIndex || 0,
     updated_at: new Date().toISOString()
   };
 
@@ -169,6 +173,41 @@ export async function deleteObjective(objective) {
 }
 
 /**
+ * Update an objective's order index and optionally folder
+ * @param {string} id - Objective ID
+ * @param {number} orderIndex - New order index
+ * @param {string|null} folderId - Optional folder ID to move to
+ */
+export async function updateObjectiveOrder(id, orderIndex, folderId = undefined) {
+  const client = initClient();
+
+  if (!client) {
+    throw new Error('Supabase not configured');
+  }
+
+  const record = {
+    order_index: orderIndex,
+    updated_at: new Date().toISOString()
+  };
+
+  // Only update folder_id if explicitly provided
+  if (folderId !== undefined) {
+    record.folder_id = folderId;
+  }
+
+  const { error } = await client
+    .from('objectives')
+    .update(record)
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(`Failed to update objective order: ${error.message}`);
+  }
+
+  console.log('Updated objective order:', id, 'to index', orderIndex);
+}
+
+/**
  * Check if the storage system is available
  */
 export function isStorageAvailable() {
@@ -226,6 +265,7 @@ export default {
   loadAllObjectives,
   saveObjective,
   deleteObjective,
+  updateObjectiveOrder,
   isStorageAvailable,
   getStorageStatus,
   subscribeToChanges

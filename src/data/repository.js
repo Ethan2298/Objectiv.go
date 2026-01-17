@@ -9,10 +9,20 @@ import {
   loadAllObjectives,
   saveObjective as saveObjectiveFile,
   deleteObjective as deleteObjectiveFile,
+  updateObjectiveOrder,
   isStorageAvailable,
   getStorageStatus,
   subscribeToChanges
 } from './supabase-storage.js';
+
+import {
+  loadAllFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  moveObjectiveToFolder,
+  subscribeToFolderChanges
+} from './folder-storage.js';
 
 // ========================================
 // Configuration
@@ -236,6 +246,23 @@ export { getStorageStatus };
  */
 export { subscribeToChanges };
 
+/**
+ * Update objective order
+ */
+export { updateObjectiveOrder };
+
+/**
+ * Folder operations - re-export from folder-storage
+ */
+export {
+  loadAllFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  moveObjectiveToFolder,
+  subscribeToFolderChanges
+};
+
 // ========================================
 // Factory Functions
 // ========================================
@@ -243,11 +270,13 @@ export { subscribeToChanges };
 /**
  * Create a new objective
  */
-export function createObjective(name = '', description = '') {
+export function createObjective(name = '', description = '', folderId = null, orderIndex = 0) {
   return {
     id: generateId(),
     name,
     description,
+    folderId,
+    orderIndex,
     createdAt: new Date().toISOString(),
     priorities: [],
     steps: []
@@ -297,8 +326,16 @@ export default {
   invalidateCache,
   getStorageStatus,
   subscribeToChanges,
+  updateObjectiveOrder,
   generateId,
   createObjective,
   createPriority,
-  createStep
+  createStep,
+  // Folder operations
+  loadAllFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  moveObjectiveToFolder,
+  subscribeToFolderChanges
 };
