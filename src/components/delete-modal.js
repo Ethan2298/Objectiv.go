@@ -59,8 +59,9 @@ export function showDeleteModal({ itemName, itemType, onConfirm }) {
   // Handle confirm
   confirmBtn.addEventListener('click', () => {
     if (input.value.trim().toUpperCase() === 'DELETE') {
+      const callback = onConfirmCallback; // Save before hiding clears it
       hideDeleteModal();
-      if (onConfirmCallback) onConfirmCallback();
+      if (callback) callback();
     }
   });
 
@@ -80,8 +81,9 @@ export function showDeleteModal({ itemName, itemType, onConfirm }) {
   // Handle enter key to confirm
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && input.value.trim().toUpperCase() === 'DELETE') {
+      const callback = onConfirmCallback; // Save before hiding clears it
       hideDeleteModal();
-      if (onConfirmCallback) onConfirmCallback();
+      if (callback) callback();
     }
   });
 

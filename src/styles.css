@@ -5,7 +5,7 @@
 :root {
   --bg: #020203;
   --bg-subtle: #070708;
-  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-hover: rgba(255, 255, 255, 0.1);
   --text: #e0e0e0;
   --text-muted: #888;
   --text-dim: #666;
@@ -17,7 +17,7 @@
 body.light-mode {
   --bg: #f8f8f8;
   --bg-subtle: #fff;
-  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-hover: rgba(0, 0, 0, 0.08);
   --text: #1a1a1a;
   --text-muted: #555;
   --text-dim: #777;
@@ -254,7 +254,7 @@ body.browser-mode #intro {
   overflow: hidden;
   min-width: 150px;
   max-width: 500px;
-  padding: 0 0 0 12px;
+  padding: 0;
   transition: margin-left 0.25s ease, opacity 0.25s ease;
 }
 
@@ -304,7 +304,7 @@ body.light-mode #resize-handle::after {
 .side-item {
   display: flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px 8px 2px 16px;
   cursor: pointer;
   scroll-snap-align: start;
   scroll-snap-stop: always;
@@ -607,7 +607,7 @@ body.light-mode .side-item.selected {
    ======================================== */
 .add-option {
   color: var(--text-dim);
-  padding: 2px 8px;
+  padding: 2px 8px 2px 16px;
   cursor: pointer;
 }
 
@@ -1713,12 +1713,12 @@ body.light-mode .side-item.folder-row.selected {
 .side-item[data-type="objective"][data-depth="4"] { padding-left: 60px; }
 
 /* Indent guide lines - centered under parent chevron */
-/* Depth 0 chevron center: 8px padding + 7px (half of 14px icon) = 15px */
-/* Each depth adds 8px */
+/* Chevron center = padding-left + (toggle-width / 2) = 16px + 10px = 26px */
+/* Each depth adds 8px of padding, so guides at 26px, 34px, 42px, 50px */
 .side-item[data-depth="1"]::before {
   content: '';
   position: absolute;
-  left: 15px;
+  left: 26px;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -1728,7 +1728,7 @@ body.light-mode .side-item.folder-row.selected {
 .side-item[data-depth="2"]::before {
   content: '';
   position: absolute;
-  left: 15px;
+  left: 26px;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -1739,7 +1739,7 @@ body.light-mode .side-item.folder-row.selected {
 .side-item[data-depth="3"]::before {
   content: '';
   position: absolute;
-  left: 15px;
+  left: 26px;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -1750,7 +1750,7 @@ body.light-mode .side-item.folder-row.selected {
 .side-item[data-depth="4"]::before {
   content: '';
   position: absolute;
-  left: 15px;
+  left: 26px;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -1777,9 +1777,40 @@ body.light-mode .side-item.folder-row.selected {
   stroke: var(--text-muted);
 }
 
-.folder-row.selected .folder-icon {
-  stroke: currentColor;
+
+/* Folder toggle button */
+.folder-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
 }
+
+/* On row hover, chevron gets a square of the original bg to stay isolated */
+.folder-row:hover .folder-toggle {
+  background: var(--bg);
+}
+
+/* Chevron's own hover state */
+.folder-row:hover .folder-toggle:hover {
+  background: var(--bg-subtle);
+}
+
+.folder-toggle .folder-icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 0;
+  stroke: var(--text-muted);
+}
+
 
 /* Folder name */
 .folder-name {
@@ -1867,168 +1898,6 @@ body.light-mode .side-item.folder-row.selected {
   outline: 1px solid var(--accent);
 }
 
-/* Add folder button */
-.side-item.add-folder {
-  color: var(--text-dim);
-  font-size: 12px;
-  padding: 4px 8px;
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-}
-
-.side-item.add-folder .folder-icon {
-  width: 14px;
-  height: 14px;
-  margin-right: 6px;
-  stroke: var(--text-dim);
-}
-
-.side-item.add-folder:hover {
-  color: var(--accent);
-}
-
-.side-item.add-folder:hover .folder-icon {
-  stroke: var(--text-dim);
-}
-
-/* ========================================
-   Context Menu
-   ======================================== */
-.context-menu {
-  position: fixed;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 0;
-  min-width: 140px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 10001;
-}
-
-.context-menu-item {
-  padding: 8px 14px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.context-menu-item:hover {
-  background: var(--bg-hover);
-}
-
-.context-menu-item.danger {
-  color: #ef4444;
-}
-
-.context-menu-item.danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-}
-
-/* ========================================
-   Delete Confirmation Modal
-   ======================================== */
-.delete-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10002;
-}
-
-.delete-modal {
-  background: #1a1a1a;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  width: 90%;
-  max-width: 400px;
-}
-
-.delete-modal-header {
-  font-size: 18px;
-  font-weight: 600;
-  color: #ef4444;
-  margin-bottom: 16px;
-}
-
-.delete-modal-body p {
-  margin: 0 0 12px 0;
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.delete-modal-warning {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.delete-modal-label {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.delete-modal-input {
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 14px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.delete-modal-input:focus {
-  outline: none;
-  border-color: #ef4444;
-}
-
-.delete-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.delete-modal-cancel,
-.delete-modal-confirm {
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 4px;
-  cursor: pointer;
-  border: none;
-}
-
-.delete-modal-cancel {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.delete-modal-cancel:hover {
-  background: var(--border);
-}
-
-.delete-modal-confirm {
-  background: #ef4444;
-  color: white;
-}
-
-.delete-modal-confirm:hover:not(:disabled) {
-  background: #dc2626;
-}
-
-.delete-modal-confirm:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 /* ========================================
    Modal Overlays (PIN, Supabase Config)
@@ -2143,12 +2012,82 @@ body.light-mode .context-menu-separator {
    Delete Confirmation Modal
    ======================================== */
 .delete-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 12000;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .delete-modal {
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
   max-width: 360px;
   width: 90%;
+}
+
+.delete-modal-header {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ff5555;
+  margin-bottom: 16px;
+}
+
+.delete-modal-body {
+  margin-bottom: 20px;
+}
+
+.delete-modal-body p {
+  margin: 0 0 12px 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.delete-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.delete-modal-cancel,
+.delete-modal-confirm {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+}
+
+.delete-modal-cancel {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.delete-modal-cancel:hover {
+  background: var(--border);
+}
+
+.delete-modal-confirm {
+  background: #ff5555;
+  color: white;
+}
+
+.delete-modal-confirm:hover:not(:disabled) {
+  background: #ff6b6b;
+}
+
+.delete-modal-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .delete-modal-title {
@@ -2269,4 +2208,54 @@ body.light-mode .delete-modal-btn.cancel {
 
 body.light-mode .delete-modal-btn.cancel:hover {
   border-color: #ccc;
+}
+
+/* ========================================
+   Add Item Button (Plus Button)
+   ======================================== */
+.add-item-btn {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.add-item-btn:hover {
+  background: var(--bg-hover);
+}
+
+.add-item-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--text-muted);
+  transition: stroke 0.15s;
+}
+
+.add-item-btn:hover svg {
+  stroke: var(--accent);
+}
+
+/* Mobile styles for add button */
+@media (max-width: 768px) {
+  .add-item-btn {
+    bottom: 24px;
+    left: 24px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .add-item-btn svg {
+    width: 20px;
+    height: 20px;
+  }
 }

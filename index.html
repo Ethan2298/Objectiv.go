@@ -50,6 +50,11 @@
       <div id="side-list">
         <div id="resize-handle"></div>
         <div id="side-list-items"></div>
+        <button id="add-item-btn" class="add-item-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
       </div>
 
       <!-- Content View (2/3) -->
@@ -1054,15 +1059,15 @@
             : '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
 
           item.innerHTML = `
-            ${folderIcon}<span class="folder-name">${itemData.name || 'Unnamed Folder'}</span>${indicator}
+            <button class="folder-toggle">${folderIcon}</button><span class="folder-name">${itemData.name || 'Unnamed Folder'}</span>${indicator}
           `;
 
           // Click to select folder and show in content area
           item.onclick = (e) => {
             e.stopPropagation();
 
-            // Clicking on folder icon toggles expansion
-            if (e.target.closest('.folder-icon')) {
+            // Clicking on folder toggle toggles expansion
+            if (e.target.closest('.folder-toggle')) {
               SideListState.toggleFolder(itemData.folderId);
               renderSideList();
               return;
@@ -1116,20 +1121,6 @@
           // Make objectives draggable and drop targets (for position-aware reordering)
           setupDraggable(item, 'objective', itemData.objectiveId, itemData.data);
           setupDropTarget(item, 'objective', itemData.objectiveId);
-          break;
-
-        case ItemType.ADD_FOLDER:
-          item.className = 'side-item add-option add-folder' + (isSelected ? ' selected' : '');
-          item.dataset.type = 'add-folder';
-          item.innerHTML = `<span class="side-item-name">+ Add folder</span>${indicator}`;
-          item.onclick = () => startAddFolder();
-          break;
-
-        case ItemType.ADD_OBJECTIVE:
-          item.className = 'side-item add-option' + (isSelected ? ' selected' : '');
-          item.dataset.type = 'add-objective';
-          item.innerHTML = `<span class="side-item-name">+ Add objective</span>${indicator}`;
-          item.onclick = () => handleSideItemClick(idx, itemData);
           break;
 
         default:
@@ -1189,10 +1180,8 @@
 
                     // Refresh the view
                     updateView();
-                    showToast('Objective deleted');
                   } catch (err) {
                     console.error('Failed to delete objective:', err);
-                    showToast('Failed to delete objective');
                   }
                 }
               });
@@ -1238,19 +1227,21 @@
                     // Remove from local data
                     data.folders = data.folders.filter(f => f.id !== itemData.folderId);
 
-                    // Move any objectives in this folder to unfiled
-                    data.objectives.forEach(obj => {
+                    // Move any objectives in this folder to unfiled (and save them)
+                    const Repository = window.Objectiv?.Repository;
+                    for (const obj of data.objectives) {
                       if (obj.folderId === itemData.folderId) {
                         obj.folderId = null;
+                        if (Repository?.saveOneObjective) {
+                          await Repository.saveOneObjective(obj);
+                        }
                       }
-                    });
+                    }
 
                     // Refresh the view
                     updateView();
-                    showToast('Folder deleted');
                   } catch (err) {
                     console.error('Failed to delete folder:', err);
-                    showToast('Failed to delete folder');
                   }
                 }
               });
@@ -1613,10 +1604,6 @@
             renderContentView();
             updateSideListSelection();
             if (isMobile) setMobileView('detail');
-            break;
-
-          case ItemType.ADD_OBJECTIVE:
-            startAddObjective();
             break;
         }
       }
@@ -2337,63 +2324,100 @@
       setTimeout(() => { toast.style.display = 'none'; }, duration);
     }
 
-    // Start add folder
-    async function startAddFolder() {
-      // Prompt for folder name
-      const name = prompt('Folder name:');
-      if (!name || !name.trim()) return;
+    // Alias for backwards compatibility
+    const showToast = showMessage;
 
+    // Add new folder with placeholder name at the top of the list
+    async function addNewFolder() {
       try {
-        if (window.Objectiv?.Repository?.createFolder) {
-          const folder = await window.Objectiv.Repository.createFolder({
-            name: name.trim(),
-            parentId: null,
-            orderIndex: data.folders.length
-          });
-          console.log('Created folder:', folder);
+        const Repository = window.Objectiv?.Repository;
+        const SideListState = window.Objectiv?.SideListState;
 
-          // Reload folders and refresh
-          const folders = await window.Objectiv.Repository.loadAllFolders();
-          data.folders = folders;
+        if (!Repository?.createFolder) {
+          console.warn('Repository.createFolder not available');
+          return;
+        }
 
-          // Expand the new folder
-          const SideListState = window.Objectiv?.SideListState;
-          if (SideListState) {
-            SideListState.expandFolder(folder.id);
-          }
+        // Calculate orderIndex to place at top (min - 1)
+        const minOrder = data.folders.reduce((min, f) => Math.min(min, f.orderIndex || 0), 0);
+        const topOrderIndex = minOrder - 1;
 
+        const folder = await Repository.createFolder({
+          name: 'New Folder',
+          parentId: null,
+          orderIndex: topOrderIndex
+        });
+        console.log('Created folder:', folder);
+
+        // Reload folders and refresh
+        const folders = await Repository.loadAllFolders();
+        data.folders = folders;
+
+        // Select the new folder
+        if (SideListState) {
+          renderSideList();
+          SideListState.selectItem(SideListState.ItemType.FOLDER, folder.id);
+          scrollToSelected();
+        } else {
           renderSideList();
         }
       } catch (err) {
         console.error('Failed to create folder:', err);
-        alert('Failed to create folder: ' + err.message);
+        showMessage('Failed to create folder');
       }
     }
 
-    // Start add objective
+    // Add new objective with placeholder name at the top of the list
+    async function addNewObjective() {
+      try {
+        const Repository = window.Objectiv?.Repository;
+        const SideListState = window.Objectiv?.SideListState;
+
+        // Calculate orderIndex to place at top (min - 1)
+        const minOrder = data.objectives.reduce((min, o) => Math.min(min, o.orderIndex || 0), 0);
+        const topOrderIndex = minOrder - 1;
+
+        // Create objective with placeholder name
+        const newObj = {
+          id: generateId(),
+          name: 'New Objective',
+          description: '',
+          priorities: [],
+          steps: [],
+          orderIndex: topOrderIndex
+        };
+
+        // Add to beginning of array
+        data.objectives.unshift(newObj);
+
+        // Save to storage
+        if (Repository?.saveObjective) {
+          await Repository.saveObjective(newObj);
+        }
+
+        // Select the new objective
+        selectedObjectiveIndex = 0;
+        viewMode = 'objective';
+
+        // Rebuild and render
+        if (SideListState) {
+          renderSideList();
+          SideListState.selectItem(SideListState.ItemType.OBJECTIVE, newObj.id);
+          scrollToSelected();
+        } else {
+          renderSideList();
+        }
+
+        updateView();
+      } catch (err) {
+        console.error('Failed to create objective:', err);
+        showMessage('Failed to create objective');
+      }
+    }
+
+    // Legacy function for backwards compatibility
     function startAddObjective() {
-      // Commit any current edit first
-      commitEditInPlace();
-
-      // Create placeholder objective
-      const newObj = {
-        id: generateId(),
-        name: '',
-        description: '',
-        priorities: [],
-        steps: []
-      };
-      data.objectives.push(newObj);
-
-      // Set up edit mode for the new objective
-      promptMode = 'add';
-      promptStep = 0;
-      promptTargetIndex = data.objectives.length - 1;
-      promptTargetSection = 'objectives';
-      promptData = { type: 'objective', item: newObj };
-      selectedObjectiveIndex = promptTargetIndex;
-
-      updateView();
+      addNewObjective();
     }
 
     // Start add priority (instant inline edit pattern)
@@ -3388,6 +3412,39 @@
     // Auto-pause timer when closing browser/app
     window.addEventListener('beforeunload', () => {
       autoPauseNextStepTimer();
+    });
+
+    // Plus button click handler - shows menu to add folder or objective
+    document.getElementById('add-item-btn')?.addEventListener('click', (e) => {
+      const ContextMenu = window.Objectiv?.ContextMenu;
+      if (!ContextMenu) {
+        console.warn('ContextMenu module not loaded');
+        return;
+      }
+
+      const btn = e.currentTarget;
+      const rect = btn.getBoundingClientRect();
+
+      // Menu items
+      const menuItems = [
+        {
+          label: 'New Folder',
+          action: () => addNewFolder()
+        },
+        {
+          label: 'New Objective',
+          action: () => addNewObjective()
+        }
+      ];
+
+      // Estimate menu height (2 items ~29px each + 8px padding)
+      const estimatedMenuHeight = menuItems.length * 29 + 8;
+
+      ContextMenu.showContextMenu({
+        x: rect.left,
+        y: rect.top - estimatedMenuHeight - 4, // Position above the button
+        items: menuItems
+      });
     });
 
     init();

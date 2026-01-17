@@ -99,7 +99,6 @@ export function selectItem(type, identifier) {
     if (item.type !== type) return false;
     if (type === ItemType.OBJECTIVE) return item.objectiveId === identifier;
     if (type === ItemType.FOLDER) return item.folderId === identifier;
-    if (type === ItemType.ADD_OBJECTIVE) return true;
     return false;
   });
   if (index !== -1) {
@@ -254,20 +253,6 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
       addFolderItems(item.data, 0);
     }
   });
-
-  // Add "Add folder" option
-  items.push({
-    type: ItemType.ADD_FOLDER,
-    name: '+ Add folder'
-  });
-
-  // Add "Add objective" option (unless currently adding)
-  if (!isAddingObjective) {
-    items.push({
-      type: ItemType.ADD_OBJECTIVE,
-      name: '+ Add objective'
-    });
-  }
 
   state.items = items;
 
