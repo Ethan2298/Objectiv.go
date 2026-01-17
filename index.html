@@ -1010,10 +1010,10 @@
         lucide.createIcons();
       }
 
-      // Scroll selected into view
+      // Scroll selected to snap position
       const selectedEl = container.querySelector('.side-item.selected');
       if (selectedEl) {
-        selectedEl.scrollIntoView({ block: 'nearest' });
+        selectedEl.scrollIntoView({ block: 'start' });
       }
     }
 
@@ -1600,7 +1600,7 @@
         const idx = parseInt(item.dataset.idx, 10);
         if (idx === selectedIdx) {
           item.classList.add('selected');
-          item.scrollIntoView({ block: 'nearest' });
+          item.scrollIntoView({ block: 'start' });
         } else {
           item.classList.remove('selected');
         }
@@ -2576,12 +2576,8 @@
       }
     }
 
-    // Listen for scroll - visual updates only, content deferred
-    // Desktop only - mobile uses tap-to-select
+    // Side list container reference
     const sideListItems = document.getElementById('side-list-items');
-    if (sideListItems && !isMobile) {
-      sideListItems.addEventListener('scroll', updateVisualSelection, { passive: true });
-    }
 
     // ========================================
     // WHEEL HANDLER - Velocity-based sensitivity (like game aim sensitivity)
@@ -2593,8 +2589,8 @@
     let _wheelVelocity = 0;
 
     // Tuning parameters (adjust these for feel)
-    const WHEEL_BASE_THRESHOLD = 80;    // Threshold for slow/deliberate scrolling
-    const WHEEL_MIN_THRESHOLD = 15;     // Threshold at max velocity (fast flicks)
+    const WHEEL_BASE_THRESHOLD = 20;    // Threshold for slow/deliberate scrolling
+    const WHEEL_MIN_THRESHOLD = 5;      // Threshold at max velocity (fast flicks)
     const WHEEL_VELOCITY_DECAY = 0.85;  // How fast velocity decays between events
     const WHEEL_VELOCITY_SCALE = 0.4;   // How much each scroll adds to velocity
 
@@ -2637,16 +2633,22 @@
           const newIdx = Math.max(0, Math.min(currentIdx + direction, items.length - 1));
 
           if (newIdx !== currentIdx && items[newIdx]) {
-            // Use scrollIntoView - lets browser handle scroll-snap properly
-            // 'auto' behavior for fast scrolling, 'smooth' for slow
-            const scrollBehavior = _wheelVelocity > 40 ? 'auto' : 'smooth';
+            // Directly update selection state
+            SideListState.setSelectedIndex(newIdx);
 
+            // Update visual classes
+            if (items[currentIdx]) items[currentIdx].classList.remove('selected');
+            items[newIdx].classList.add('selected');
+
+            // Scroll to item
+            const scrollBehavior = _wheelVelocity > 40 ? 'auto' : 'smooth';
             items[newIdx].scrollIntoView({
               block: 'start',
               behavior: scrollBehavior
             });
-            // updateVisualSelection() fires from scroll event
-            // scheduleContentLoad() defers content loading
+
+            playNotch();
+            scheduleContentLoad(newIdx);
           }
         }
       }, { passive: false });

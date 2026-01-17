@@ -408,7 +408,7 @@ body.light-mode .side-item.selected {
   align-items: center;
   justify-content: flex-start;
   height: 100%;
-  padding-top: calc(30vh - 81px);
+  padding-top: calc(30vh - 118px);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
