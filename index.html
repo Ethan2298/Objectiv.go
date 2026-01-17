@@ -2478,64 +2478,6 @@
     // ========================================
 
     /**
-     * Update visual selection only - NO content loading
-     * Throttled via RAF to prevent layout thrashing
-     */
-    let _rafPending = false;
-    function updateVisualSelection() {
-      if (_rafPending) return;
-      _rafPending = true;
-
-      requestAnimationFrame(() => {
-        _rafPending = false;
-
-        const container = document.getElementById('side-list-items');
-        if (!container) return;
-
-        const items = container.querySelectorAll('.side-item');
-        if (!items.length) return;
-
-        const SideListState = window.Objectiv?.SideListState;
-        if (!SideListState) return;
-
-        // BATCH READ: Get all measurements first (before any writes)
-        const containerRect = container.getBoundingClientRect();
-        const snapLineY = containerRect.top + (window.innerHeight * 0.30);
-        const scrollTop = container.scrollTop;
-
-        // Find the item at the snap line
-        let selectedIndex = 0;
-
-        if (scrollTop <= 5) {
-          selectedIndex = 0;
-        } else {
-          for (let idx = 0; idx < items.length; idx++) {
-            const itemRect = items[idx].getBoundingClientRect();
-            if (itemRect.top >= snapLineY - 5) {
-              selectedIndex = idx;
-              break;
-            }
-            selectedIndex = idx;
-          }
-        }
-
-        // Only update if selection changed
-        const prevIndex = SideListState.getSelectedIndex();
-        if (selectedIndex !== prevIndex) {
-          SideListState.setSelectedIndex(selectedIndex);
-          playNotch();
-
-          // BATCH WRITE: Update classes (only changed items)
-          if (items[prevIndex]) items[prevIndex].classList.remove('selected');
-          if (items[selectedIndex]) items[selectedIndex].classList.add('selected');
-
-          // DEFERRED: Schedule content loading after scroll settles
-          scheduleContentLoad(selectedIndex);
-        }
-      });
-    }
-
-    /**
      * Schedule content loading - debounced to run after scroll stops
      */
     function scheduleContentLoad(index) {
@@ -2580,78 +2522,64 @@
     const sideListItems = document.getElementById('side-list-items');
 
     // ========================================
-    // WHEEL HANDLER - Velocity-based sensitivity (like game aim sensitivity)
-    // Slow = precise one-by-one, Fast = accelerated scrolling
-    // Desktop only - mobile uses normal touch scrolling
+    // SCROLL-SNAP BASED SELECTION
+    // Dot and content both update instantly to match snap position
+    // Desktop only - mobile uses tap-to-select
     // ========================================
-    let _wheelDelta = 0;
-    let _lastWheelTime = 0;
-    let _wheelVelocity = 0;
-
-    // Tuning parameters (adjust these for feel)
-    const WHEEL_BASE_THRESHOLD = 20;    // Threshold for slow/deliberate scrolling
-    const WHEEL_MIN_THRESHOLD = 5;      // Threshold at max velocity (fast flicks)
-    const WHEEL_VELOCITY_DECAY = 0.85;  // How fast velocity decays between events
-    const WHEEL_VELOCITY_SCALE = 0.4;   // How much each scroll adds to velocity
+    let _rafPending = false;
 
     if (sideListItems && !isMobile) {
-      sideListItems.addEventListener('wheel', (e) => {
-        e.preventDefault(); // Take control of scrolling
+      sideListItems.addEventListener('scroll', () => {
+        if (_rafPending) return;
+        _rafPending = true;
 
-        const SideListState = window.Objectiv?.SideListState;
-        if (!SideListState) return;
+        requestAnimationFrame(() => {
+          _rafPending = false;
 
-        const items = sideListItems.querySelectorAll('.side-item');
-        if (!items.length) return;
+          const SideListState = window.Objectiv?.SideListState;
+          if (!SideListState) return;
 
-        // Track velocity based on time between events
-        const now = performance.now();
-        const timeDelta = now - _lastWheelTime;
-        _lastWheelTime = now;
+          const items = sideListItems.querySelectorAll('.side-item');
+          if (!items.length) return;
 
-        // Decay velocity over time, then add new input
-        if (timeDelta > 150) {
-          _wheelVelocity = 0; // Reset if pause in scrolling
-        } else {
-          _wheelVelocity *= WHEEL_VELOCITY_DECAY;
-        }
-        _wheelVelocity += Math.abs(e.deltaY) * WHEEL_VELOCITY_SCALE;
+          // Find item closest to snap line
+          const containerRect = sideListItems.getBoundingClientRect();
+          const snapLineY = containerRect.top + (window.innerHeight * 0.30);
 
-        // Dynamic threshold: higher velocity = lower threshold = faster scrolling
-        const velocityFactor = Math.min(_wheelVelocity / 80, 1); // 0 to 1
-        const threshold = WHEEL_BASE_THRESHOLD - (WHEEL_BASE_THRESHOLD - WHEEL_MIN_THRESHOLD) * velocityFactor;
+          let closestIdx = 0;
+          let closestDistance = Infinity;
 
-        // Accumulate wheel delta
-        _wheelDelta += e.deltaY;
+          items.forEach((item, idx) => {
+            const itemRect = item.getBoundingClientRect();
+            // Match scroll-snap-align: start - use top edge
+            const distance = Math.abs(itemRect.top - snapLineY);
+            if (distance < closestDistance) {
+              closestDistance = distance;
+              closestIdx = idx;
+            }
+          });
 
-        // Check if we've scrolled enough to move
-        if (Math.abs(_wheelDelta) >= threshold) {
-          const direction = _wheelDelta > 0 ? 1 : -1;
-          _wheelDelta = 0; // Reset accumulator
+          const prevIdx = SideListState.getSelectedIndex();
+          if (closestIdx !== prevIdx) {
+            // Update state
+            SideListState.setSelectedIndex(closestIdx);
 
-          const currentIdx = SideListState.getSelectedIndex();
-          const newIdx = Math.max(0, Math.min(currentIdx + direction, items.length - 1));
+            // Update visual dot
+            if (items[prevIdx]) items[prevIdx].classList.remove('selected');
+            if (items[closestIdx]) items[closestIdx].classList.add('selected');
 
-          if (newIdx !== currentIdx && items[newIdx]) {
-            // Directly update selection state
-            SideListState.setSelectedIndex(newIdx);
-
-            // Update visual classes
-            if (items[currentIdx]) items[currentIdx].classList.remove('selected');
-            items[newIdx].classList.add('selected');
-
-            // Scroll to item
-            const scrollBehavior = _wheelVelocity > 40 ? 'auto' : 'smooth';
-            items[newIdx].scrollIntoView({
-              block: 'start',
-              behavior: scrollBehavior
-            });
+            // Update content immediately
+            const itemData = SideListState.getItems()[closestIdx];
+            if (itemData?.type === SideListState.ItemType.OBJECTIVE) {
+              selectedObjectiveIndex = itemData.index;
+              viewMode = 'objective';
+              renderContentView();
+            }
 
             playNotch();
-            scheduleContentLoad(newIdx);
           }
-        }
-      }, { passive: false });
+        });
+      }, { passive: true });
     }
 
     // ========================================
