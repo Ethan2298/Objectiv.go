@@ -33,6 +33,7 @@ import * as Intro from './features/intro.js';
 import * as Sidebar from './features/sidebar.js';
 import * as Tabs from './features/tabs.js';
 import * as Mobile from './features/mobile.js';
+import * as Router from './router.js';
 
 // ========================================
 // Module Imports - Controllers
@@ -79,6 +80,7 @@ window.Objectiv = {
   Intro,
   Sidebar,
   Mobile,
+  Router,
 
   // Controllers
   PromptController,
@@ -169,6 +171,7 @@ function saveData() {
 
 /**
  * Update active tab title and icon based on current selection
+ * Also updates URL and browser window title
  */
 function updateTabTitleFromSelection() {
   const selection = TabState.getSelection();
@@ -176,20 +179,28 @@ function updateTabTitleFromSelection() {
 
   let title = 'Objectiv';
   let icon = 'home';
+  let windowTitle = null;
 
   if (selection.type === 'home') {
     title = 'Home';
     icon = 'home';
+    windowTitle = null; // Will show just "Objectiv"
   } else if (selection.type === 'web') {
     // Web view - title/icon will be updated by webview events
     title = 'Web';
     icon = 'web';
+    windowTitle = 'Web';
+  } else if (selection.type === 'settings') {
+    title = 'Settings';
+    icon = 'settings';
+    windowTitle = 'Settings';
   } else if (selection.type === 'objective' && selection.id) {
     // Look up objective by ID from data
     const objectives = AppState.getObjectives();
     const objective = objectives.find(o => o.id === selection.id);
     if (objective) {
       title = objective.name || 'Untitled';
+      windowTitle = objective.name || 'Untitled';
     }
     icon = 'objective';
   } else if (selection.type === 'folder' && selection.id) {
@@ -198,15 +209,21 @@ function updateTabTitleFromSelection() {
     const folder = folders.find(f => f.id === selection.id);
     if (folder) {
       title = folder.name || 'Folder';
+      windowTitle = folder.name || 'Folder';
     }
     icon = 'folder';
   } else if (viewMode === 'empty' || !selection.id) {
     title = 'Objectiv';
     icon = 'home';
+    windowTitle = null;
   }
 
   Tabs.updateActiveTabTitle(title);
   Tabs.updateActiveTabIcon(icon);
+
+  // Update URL and window title
+  Router.updateURL(selection.type, selection.id);
+  Router.updateWindowTitle(windowTitle);
 }
 
 /**
@@ -411,6 +428,65 @@ function initEventHandlers() {
 // ========================================
 
 /**
+ * Handle navigation from URL changes (back/forward buttons)
+ */
+function handleRouteNavigation(route) {
+  const { type, id } = route;
+
+  if (type === 'home') {
+    TabState.setSelection('home', 'home');
+    AppState.setViewMode('home');
+  } else if (type === 'settings') {
+    TabState.setSelection('settings', 'settings');
+    AppState.setViewMode('settings');
+  } else if (type === 'objective' && id) {
+    // Verify objective exists
+    const objectives = AppState.getObjectives();
+    const objective = objectives.find(o => o.id === id);
+    if (objective) {
+      TabState.setSelection(id, 'objective');
+      AppState.setViewMode('objective');
+    } else {
+      // Objective not found - go to home
+      TabState.setSelection('home', 'home');
+      AppState.setViewMode('home');
+    }
+  } else if (type === 'folder' && id) {
+    // Verify folder exists
+    const folders = AppState.getFolders();
+    const folder = folders.find(f => f.id === id);
+    if (folder) {
+      TabState.setSelection(id, 'folder');
+      AppState.setViewMode('folder');
+    } else {
+      // Folder not found - go to home
+      TabState.setSelection('home', 'home');
+      AppState.setViewMode('home');
+    }
+  } else {
+    // Unknown route - go to home
+    TabState.setSelection('home', 'home');
+    AppState.setViewMode('home');
+  }
+
+  updateView();
+}
+
+/**
+ * Apply initial route from URL (deep linking)
+ * Called after data is loaded
+ */
+function applyInitialRoute() {
+  if (!Router.hasInitialRoute()) {
+    return false;
+  }
+
+  const route = Router.getRouteFromURL();
+  handleRouteNavigation(route);
+  return true;
+}
+
+/**
  * Initialize the application
  */
 export async function init() {
@@ -434,6 +510,9 @@ export async function init() {
   // Wire all callbacks
   wireCallbacks();
 
+  // Initialize router for back/forward navigation
+  Router.initRouter(handleRouteNavigation);
+
   // Initialize platform features
   Platform.init();
 
@@ -450,7 +529,12 @@ export async function init() {
   await Intro.showIntro();
 
   // Initialize storage (async, non-blocking)
-  setTimeout(initStorage, 100);
+  // After storage loads, apply initial route if present
+  setTimeout(async () => {
+    await initStorage();
+    // Apply initial route after data is loaded (deep linking)
+    applyInitialRoute();
+  }, 100);
 
   // Initialize navigation controller
   NavigationController.init();
@@ -507,6 +591,7 @@ export {
   Intro,
   Sidebar,
   Mobile,
+  Router,
 
   // Controllers
   PromptController,
@@ -544,6 +629,7 @@ export default {
   Intro,
   Sidebar,
   Mobile,
+  Router,
   PromptController,
   NavigationController,
   EditController,

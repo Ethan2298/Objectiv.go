@@ -84,25 +84,43 @@ export function init() {
     });
   }
 
-  // Web navigation buttons
+  // Navigation buttons - work for both browser history and webview
   if (btnBack) {
     btnBack.addEventListener('click', () => {
-      const webview = document.querySelector('.web-browser-frame');
-      if (webview) webview.goBack();
+      const viewMode = AppState.getViewMode();
+      if (viewMode === 'web') {
+        const webview = document.querySelector('.web-browser-frame');
+        if (webview) webview.goBack();
+      } else {
+        // Use browser history for app navigation
+        window.history.back();
+      }
     });
   }
 
   if (btnForward) {
     btnForward.addEventListener('click', () => {
-      const webview = document.querySelector('.web-browser-frame');
-      if (webview) webview.goForward();
+      const viewMode = AppState.getViewMode();
+      if (viewMode === 'web') {
+        const webview = document.querySelector('.web-browser-frame');
+        if (webview) webview.goForward();
+      } else {
+        // Use browser history for app navigation
+        window.history.forward();
+      }
     });
   }
 
   if (btnRefresh) {
     btnRefresh.addEventListener('click', () => {
-      const webview = document.querySelector('.web-browser-frame');
-      if (webview) webview.reload();
+      const viewMode = AppState.getViewMode();
+      if (viewMode === 'web') {
+        const webview = document.querySelector('.web-browser-frame');
+        if (webview) webview.reload();
+      } else {
+        // Refresh the current view
+        window.location.reload();
+      }
     });
   }
 }

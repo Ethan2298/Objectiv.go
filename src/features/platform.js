@@ -5,6 +5,7 @@
  */
 
 import AppState from '../state/app-state.js';
+import { createNewTab } from './tabs.js';
 
 // ========================================
 // Platform Detection
@@ -137,6 +138,7 @@ export function initSettingsButton() {
 export function openSettingsTab() {
   const TabState = window.Objectiv?.TabState;
   const SideListState = window.Objectiv?.SideListState;
+  const Router = window.Objectiv?.Router;
 
   if (!TabState) return;
 
@@ -152,6 +154,12 @@ export function openSettingsTab() {
       const tabs = document.querySelectorAll('.header-tab');
       tabs.forEach(t => t.classList.toggle('active', t.dataset.tabId === tabId));
 
+      // Update URL and window title
+      if (Router) {
+        Router.updateURL('settings', 'settings');
+        Router.updateWindowTitle('Settings');
+      }
+
       // Trigger view update
       const updateView = window.Objectiv?.updateView;
       if (updateView) updateView();
@@ -159,18 +167,23 @@ export function openSettingsTab() {
     }
   }
 
-  // No existing settings tab - update current tab to settings view
+  // No existing settings tab - create a new tab
+  createNewTab('Settings', 'settings');
+
+  // Set the new tab to settings view
   AppState.setViewMode('settings');
   TabState.setSelection('settings', 'settings');
+
+  // Update URL and window title
+  if (Router) {
+    Router.updateURL('settings', 'settings');
+    Router.updateWindowTitle('Settings');
+  }
 
   // Clear side list selection by setting index to -1
   if (SideListState && SideListState.setSelectedIndex) {
     SideListState.setSelectedIndex(-1);
   }
-
-  // Trigger view update
-  const updateView = window.Objectiv?.updateView;
-  if (updateView) updateView();
 }
 
 // ========================================
