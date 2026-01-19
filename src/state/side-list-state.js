@@ -29,7 +29,6 @@ const state = {
 
 export const ItemType = {
   HOME: 'home',
-  WEB: 'web',
   UNFILED_HEADER: 'unfiled-header',
   OBJECTIVE: 'objective',
   FOLDER: 'folder',
@@ -51,9 +50,6 @@ export function getSelectedIndex() {
 
   return state.items.findIndex(item => {
     if (selection.type === 'home' && item.type === ItemType.HOME) {
-      return true;
-    }
-    if (selection.type === 'web' && item.type === ItemType.WEB) {
       return true;
     }
     if (selection.type === 'objective' && item.type === ItemType.OBJECTIVE) {
@@ -108,8 +104,6 @@ export function setSelectedIndex(index) {
     const item = state.items[index];
     if (item.type === ItemType.HOME) {
       TabState.setSelection('home', 'home');
-    } else if (item.type === ItemType.WEB) {
-      TabState.setSelection('web', 'web');
     } else if (item.type === ItemType.OBJECTIVE) {
       TabState.setSelection(item.objectiveId, 'objective');
     } else if (item.type === ItemType.FOLDER) {
@@ -217,13 +211,6 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
   items.push({
     type: ItemType.HOME,
     name: 'Home',
-    depth: 0
-  });
-
-  // Add Web item under Home
-  items.push({
-    type: ItemType.WEB,
-    name: 'Web',
     depth: 0
   });
 

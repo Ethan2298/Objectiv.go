@@ -674,6 +674,66 @@ body.solarized-mode .side-item.selected {
   font-weight: 600;
 }
 
+/* History/Bookmark/Suggestion result styles */
+.web-search-result-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.web-search-result-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.web-search-result-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.web-search-result-title mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.web-search-result-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.web-search-result-url mark {
+  background: transparent;
+  color: var(--accent);
+}
+
+.web-search-result-visits {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.history-result,
+.suggestion-result,
+.bookmark-result {
+  padding: 6px 12px;
+}
+
 .web-search-empty {
   padding: 12px;
   color: var(--text-dim);
@@ -1154,6 +1214,29 @@ body.solarized-mode .tab-add:hover {
 #content-body {
   flex-shrink: 0;
   padding: 0;
+}
+
+/* Tab content containers - hidden by default, shown when active */
+.tab-container {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.tab-container.active {
+  display: block;
+}
+
+/* Ensure web view containers fill height properly */
+#content-page.web-mode .tab-container {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+#content-page.web-mode .tab-container.active {
+  display: flex;
 }
 
 /* ========================================
