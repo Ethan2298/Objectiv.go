@@ -1199,32 +1199,50 @@ body.solarized-mode .tab-add:hover {
   font-weight: 600;
   color: var(--text);
   font-size: 1.8em;
-  cursor: text;
   border-radius: 4px;
   padding: 2px 4px;
   margin: -2px -4px;
-  transition: background-color 0.15s ease;
   word-wrap: break-word;
   overflow-wrap: break-word;
-}
-
-#content-header-title:hover {
-  background: var(--bg-hover);
+  outline: none;
+  white-space: pre-wrap;
+  caret-color: #0891b2;
 }
 
 #content-header-title[contenteditable="true"] {
-  outline: none;
-  background: var(--bg-hover);
-  white-space: pre-wrap;
-  overflow: visible;
-  text-overflow: clip;
-  caret-color: #0891b2;
+  cursor: text;
+}
+
+#content-header-title[contenteditable="false"] {
+  cursor: default;
 }
 
 #content-header-description {
   color: var(--text-dim);
   margin-top: 4px;
   font-size: 13px;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  margin-right: -4px;
+  outline: none;
+  caret-color: #0891b2;
+}
+
+#content-header-description[contenteditable="true"] {
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+#content-header-description[contenteditable="true"]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  font-style: italic;
+  opacity: 0.6;
+}
+
+#content-header-description[contenteditable="false"] {
+  cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1351,23 +1369,22 @@ body.solarized-mode .tab-add:hover {
   min-width: 24px;
 }
 
-/* Content Column - flexible, wraps text */
+/* Content Column - flexible, wraps text, always editable */
 .list-item-content {
   flex: 1;
   min-width: 0;
   word-wrap: break-word;
   overflow-wrap: break-word;
-}
-
-.list-item-content[contenteditable="true"] {
   outline: none;
   caret-color: #0891b2;
+  cursor: text;
 }
 
-.list-item-content[contenteditable="true"]:empty:before {
+.list-item-content[contenteditable="true"]:empty::before {
   content: attr(data-placeholder);
-  color: #555;
+  color: var(--text-dim);
   font-style: italic;
+  opacity: 0.6;
 }
 
 /* Meta Column - right-aligned, fixed minimum width */

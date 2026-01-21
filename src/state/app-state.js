@@ -121,6 +121,33 @@ export function shouldSkipBlurHandler() {
   return state.skipBlurHandler;
 }
 
+/**
+ * Check if user is actively editing content
+ * With Notion-style editing, also check for focused contenteditable elements
+ * @returns {boolean}
+ */
+export function isActivelyEditing() {
+  // Check prompt state (for add flow)
+  const mode = state.promptMode;
+  if (mode === 'edit' || mode === 'add' || mode === 'refine') {
+    return true;
+  }
+
+  // Check for focused contenteditable element
+  const activeEl = document.activeElement;
+  if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
+    // Check if it's an editable content area (not the URL bar etc.)
+    const isContentArea = activeEl.closest('#content-header') ||
+                          activeEl.closest('.list-item') ||
+                          activeEl.closest('.side-item');
+    if (isContentArea) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function getContentLoadTimeout() {
   return state.contentLoadTimeout;
 }
@@ -327,6 +354,7 @@ export default {
   getPromptTargetIndex,
   getPromptTargetSection,
   shouldSkipBlurHandler,
+  isActivelyEditing,
   getContentLoadTimeout,
   getLastLoadedIndex,
   getContentLoadDebounce,

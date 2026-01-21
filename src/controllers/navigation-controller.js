@@ -73,6 +73,11 @@ export function initScrollSnapSelection() {
 
       const prevIdx = SideListState.getSelectedIndex();
       if (closestIdx !== prevIdx) {
+        // Skip scroll-snap selection changes while editing
+        if (AppState.isActivelyEditing()) {
+          return;
+        }
+
         // Update state
         SideListState.setSelectedIndex(closestIdx);
 
@@ -128,6 +133,9 @@ export function scheduleContentLoad(index) {
  * Actually load content for the selected index
  */
 function loadContentForIndex(index) {
+  // Skip if user is actively editing
+  if (AppState.isActivelyEditing()) return;
+
   if (index === AppState.getLastLoadedIndex()) return;
   AppState.setLastLoadedIndex(index);
 
@@ -312,24 +320,10 @@ function handleMouseDown(e) {
 
   // CASE 1: Not currently editing
   if (!currentEditable || !promptMode) {
-    if (clickedTitle) {
-      if (viewMode === 'objective' && data.objectives.length > 0) {
-        e.preventDefault();
-        PromptController.startEditObjectiveTitle();
-        return;
-      } else if (viewMode === 'folder') {
-        e.preventDefault();
-        PromptController.startEditFolderTitle();
-        return;
-      }
-    }
-    if (clickedListItem) {
-      e.preventDefault();
-      const section = clickedListItem.dataset.section;
-      const index = parseInt(clickedListItem.dataset.index, 10);
-      if (section && !isNaN(index)) {
-        PromptController.startEditInPlace(section, index, clickedListItem);
-      }
+    // Header title and list items are always contenteditable
+    // Browser handles focus naturally, inline-edit utility handles save on blur
+    if (clickedTitle || clickedListItem) {
+      return; // Let browser handle naturally
     }
     return;
   }
@@ -349,23 +343,25 @@ function handleMouseDown(e) {
   }
 
   // CASE 3: Clicking on different list item
+  // List items are always contenteditable - let blur/focus handlers manage state
   if (clickedListItem) {
-    e.preventDefault();
     const section = clickedListItem.dataset.section;
     const index = parseInt(clickedListItem.dataset.index, 10);
     const promptTargetIndex = AppState.getPromptTargetIndex();
 
+    // Handle title editing first
     if (promptTargetSection === 'objectives') {
       PromptController.commitObjectiveTitleEdit();
-      PromptController.startEditInPlace(section, index, clickedListItem);
+      // Let focus event on new element handle starting edit
       return;
     }
     if (promptTargetSection === 'folders') {
       PromptController.commitFolderTitleEdit();
-      PromptController.startEditInPlace(section, index, clickedListItem);
+      // Let focus event on new element handle starting edit
       return;
     }
 
+    // For list item edits, check if we need to re-render (e.g., empty item removed)
     const { needsRerender, removedElement } = PromptController.commitEditInPlace();
 
     if (needsRerender) {
@@ -374,15 +370,16 @@ function handleMouseDown(e) {
         adjustedIndex = index - 1;
       }
       _updateView();
+      // After re-render, focus the target element
       setTimeout(() => {
         const newListItem = document.querySelector(`.list-item[data-section="${section}"][data-index="${adjustedIndex}"]`);
-        if (newListItem) {
-          PromptController.startEditInPlace(section, adjustedIndex, newListItem);
+        const contentEl = newListItem?.querySelector('.list-item-content');
+        if (contentEl) {
+          contentEl.focus();
         }
       }, 0);
-    } else {
-      PromptController.startEditInPlace(section, index, clickedListItem);
     }
+    // If no re-render needed, browser will naturally handle blur/focus transition
     return;
   }
 

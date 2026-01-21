@@ -154,150 +154,43 @@ export function startLogStep() {
 }
 
 // ========================================
-// Start Edit Operations
+// Start Edit Operations (Legacy - kept for compatibility)
 // ========================================
 
 /**
- * Start editing a list item in-place (no re-render)
+ * Start editing a list item in-place
+ * Note: With Notion-style inline editing, elements are always editable.
+ * This function is kept for compatibility but is mostly a no-op.
  */
-export function startEditInPlace(section, index, listItemEl) {
-  const data = AppState.getData();
-  const selectedIdx = AppState.getSelectedObjectiveIndex();
-  const obj = data.objectives[selectedIdx];
-
-  if (!obj) return;
-
-  let item;
-  if (section === 'priorities') {
-    item = obj.priorities[index];
-  } else if (section === 'steps') {
-    item = obj.steps[index];
-  }
-  if (!item) return;
-
-  const contentSpan = listItemEl.querySelector('.list-item-content');
-  if (!contentSpan) return;
-
-  // Set up prompt state
-  AppState.setPromptState({
-    mode: 'edit',
-    step: 0,
-    targetIndex: index,
-    targetSection: section,
-    data: { type: section === 'priorities' ? 'priority' : 'step', item }
-  });
-
-  // Make element editable with spellcheck
-  contentSpan.setAttribute('contenteditable', 'true');
-  contentSpan.setAttribute('spellcheck', 'true');
-
-  // Focus and place cursor at end
-  placeCaretAtEnd(contentSpan);
-
-  // Blur handler as fallback
-  contentSpan.addEventListener('blur', () => {
-    if (AppState.shouldSkipBlurHandler()) {
-      AppState.setSkipBlurHandler(false);
-      return;
-    }
-    if (AppState.getPromptMode()) {
-      processPromptInput(contentSpan.textContent);
-    }
-  }, { once: true });
-
-  _updateStatusBar();
+export function startEditInPlace(section, index, listItemEl, options = {}) {
+  // Elements are always contenteditable now - browser handles focus naturally
+  // No state tracking needed for simple edits
 }
 
 /**
- * Start editing the objective title in the content header
+ * Start editing the objective title
+ * Note: With Notion-style inline editing, the title is always editable.
+ * This function is kept for compatibility but is mostly a no-op.
  */
 export function startEditObjectiveTitle() {
-  const data = AppState.getData();
-  const selectedIdx = AppState.getSelectedObjectiveIndex();
-  const obj = data.objectives[selectedIdx];
-
-  if (!obj) return;
-
+  // Title is always contenteditable now - browser handles focus naturally
   const titleEl = document.getElementById('content-header-title');
-  if (!titleEl) return;
-
-  // Don't start if already editing
-  if (AppState.getPromptMode()) return;
-
-  // Set up prompt state
-  AppState.setPromptState({
-    mode: 'edit',
-    step: 0,
-    targetIndex: selectedIdx,
-    targetSection: 'objectives',
-    data: { type: 'objective', item: obj }
-  });
-
-  // Make element editable with spellcheck
-  titleEl.setAttribute('contenteditable', 'true');
-  titleEl.setAttribute('spellcheck', 'true');
-
-  // Focus and place cursor at end
-  placeCaretAtEnd(titleEl);
-
-  // Blur handler as fallback
-  titleEl.addEventListener('blur', () => {
-    if (AppState.shouldSkipBlurHandler()) {
-      AppState.setSkipBlurHandler(false);
-      return;
-    }
-    if (AppState.getPromptMode() === 'edit' && AppState.getPromptTargetSection() === 'objectives') {
-      commitObjectiveTitleEdit();
-    }
-  }, { once: true });
-
-  _updateStatusBar();
+  if (titleEl) {
+    titleEl.focus();
+  }
 }
 
 /**
- * Start editing folder title in content header
+ * Start editing folder title
+ * Note: With Notion-style inline editing, the title is always editable.
+ * This function is kept for compatibility but is mostly a no-op.
  */
 export function startEditFolderTitle() {
-  const SideListState = window.Objectiv?.SideListState;
-  const selectedItem = SideListState?.getSelectedItem();
-  const folder = selectedItem?.data;
-
-  if (!folder) return;
-
+  // Title is always contenteditable now - browser handles focus naturally
   const titleEl = document.getElementById('content-header-title');
-  if (!titleEl) return;
-
-  // Don't start if already editing
-  if (AppState.getPromptMode()) return;
-
-  // Set up prompt state
-  AppState.setPromptState({
-    mode: 'edit',
-    step: 0,
-    targetIndex: null,
-    targetSection: 'folders',
-    data: { type: 'folder', item: folder }
-  });
-
-  // Make element editable with spellcheck
-  titleEl.setAttribute('contenteditable', 'true');
-  titleEl.setAttribute('spellcheck', 'true');
-
-  // Focus and place cursor at end
-  placeCaretAtEnd(titleEl);
-
-  // Blur handler as fallback
-  titleEl.addEventListener('blur', () => {
-    if (AppState.shouldSkipBlurHandler()) {
-      AppState.setSkipBlurHandler(false);
-      return;
-    }
-    if (AppState.getPromptMode() === 'edit' && AppState.getPromptTargetSection() === 'folders') {
-      commitFolderTitleEdit();
-    }
-  }, { once: true });
-
-  _updateStatusBar();
+  if (titleEl) {
+    titleEl.focus();
+  }
 }
 
 // ========================================
@@ -305,172 +198,49 @@ export function startEditFolderTitle() {
 // ========================================
 
 /**
- * Commit current edit in-place without re-rendering
+ * Commit current edit in-place
+ * Note: With Notion-style inline editing, most saving happens via blur handlers
+ * in the inline-edit utility. This function is mainly for compatibility and
+ * cleanup when switching contexts.
  * @returns {{ needsRerender: boolean, removedElement: boolean }}
  */
 export function commitEditInPlace() {
   const promptMode = AppState.getPromptMode();
-  if (!promptMode || (promptMode !== 'edit' && promptMode !== 'add' && promptMode !== 'refine')) {
+  if (!promptMode) {
     return { needsRerender: false, removedElement: false };
   }
 
-  const contentEditable = document.querySelector('.list-item-content[contenteditable="true"]');
-  if (!contentEditable) {
-    AppState.resetPromptState();
-    return { needsRerender: false, removedElement: false };
-  }
-
-  const value = contentEditable.textContent.trim();
-  const listItem = contentEditable.closest('.list-item') || contentEditable.closest('.side-item');
-  let needsRerender = false;
-  let removedElement = false;
-
-  AppState.setSkipBlurHandler(true);
-
-  const promptData = AppState.getPromptData();
-  const promptTargetIndex = AppState.getPromptTargetIndex();
-  const promptTargetSection = AppState.getPromptTargetSection();
-  const data = AppState.getData();
-  const selectedIdx = AppState.getSelectedObjectiveIndex();
-
-  if (promptMode === 'add' && promptData.item) {
-    if (!value) {
-      // Remove empty placeholder - needs re-render
-      if (promptTargetSection === 'objectives') {
-        data.objectives.splice(promptTargetIndex, 1);
-        AppState.setSelectedObjectiveIndex(Math.max(0, data.objectives.length - 1));
-      } else if (promptTargetSection === 'priorities') {
-        const obj = data.objectives[selectedIdx];
-        if (obj) obj.priorities.splice(promptTargetIndex, 1);
-      } else if (promptTargetSection === 'steps') {
-        const obj = data.objectives[selectedIdx];
-        if (obj) obj.steps.splice(promptTargetIndex, 1);
-      }
-      needsRerender = true;
-      removedElement = true;
-    } else {
-      // Save and restore in place
-      promptData.item.name = value;
-      _saveData();
-      restoreElementInPlace(contentEditable, listItem, value);
-    }
-  } else if (promptMode === 'edit' && promptData.item) {
-    if (value) {
-      promptData.item.name = value;
-      _saveData();
-    }
-    restoreElementInPlace(contentEditable, listItem, promptData.item.name);
-  } else if (promptMode === 'refine' && promptData.item) {
-    promptData.item.description = value;
-    _saveData();
-    restoreElementInPlace(contentEditable, listItem, promptData.item.name);
-  }
-
+  // Inline-edit handles saving on blur, so we just need to reset state
+  // The only case where we might need to re-render is if an add was cancelled
+  // but the inline-edit onEmpty callback handles that too
   AppState.resetPromptState();
-  return { needsRerender, removedElement };
+  return { needsRerender: false, removedElement: false };
 }
 
 /**
- * Commit objective title edit or add
+ * Commit objective title edit
+ * Note: With Notion-style inline editing, saving happens via blur handlers.
+ * This function is kept for compatibility.
  */
 export function commitObjectiveTitleEdit() {
   const promptTargetSection = AppState.getPromptTargetSection();
-  const promptMode = AppState.getPromptMode();
-
   if (promptTargetSection !== 'objectives') return;
-  if (promptMode !== 'edit' && promptMode !== 'add') return;
 
-  AppState.setSkipBlurHandler(true);
-
-  const data = AppState.getData();
-  const selectedIdx = AppState.getSelectedObjectiveIndex();
-  const promptTargetIndex = AppState.getPromptTargetIndex();
-  const promptData = AppState.getPromptData();
-
-  if (promptMode === 'edit') {
-    const titleEl = document.getElementById('content-header-title');
-    if (!titleEl) return;
-
-    const value = titleEl.textContent.trim();
-    const obj = data.objectives[selectedIdx];
-
-    if (value && obj) {
-      obj.name = value;
-      _saveData();
-      _renderSideList();
-    } else if (obj) {
-      titleEl.textContent = obj.name;
-    }
-
-    titleEl.removeAttribute('contenteditable');
-    titleEl.removeAttribute('spellcheck');
-  } else if (promptMode === 'add') {
-    const sidebarInput = document.querySelector('.side-item-name[contenteditable="true"]');
-    if (!sidebarInput) return;
-
-    const value = sidebarInput.textContent.trim();
-
-    if (value && promptData.item) {
-      promptData.item.name = value;
-      _saveData();
-      _renderSideList();
-    } else {
-      data.objectives.splice(promptTargetIndex, 1);
-      AppState.setSelectedObjectiveIndex(Math.max(0, data.objectives.length - 1));
-      _renderSideList();
-    }
-  }
-
+  // Inline-edit handles saving on blur
   AppState.resetPromptState();
   _updateStatusBar();
 }
 
 /**
  * Commit folder title edit
+ * Note: With Notion-style inline editing, saving happens via blur handlers.
+ * This function is kept for compatibility.
  */
-export async function commitFolderTitleEdit() {
+export function commitFolderTitleEdit() {
   const promptTargetSection = AppState.getPromptTargetSection();
-  const promptMode = AppState.getPromptMode();
-
   if (promptTargetSection !== 'folders') return;
-  if (promptMode !== 'edit') return;
 
-  AppState.setSkipBlurHandler(true);
-
-  const titleEl = document.getElementById('content-header-title');
-  if (!titleEl) return;
-
-  const value = titleEl.textContent.trim();
-  const promptData = AppState.getPromptData();
-  const folder = promptData?.item;
-  const data = AppState.getData();
-
-  if (value && folder) {
-    // Update folder name in data.folders
-    const folderInData = data.folders.find(f => f.id === folder.id);
-    if (folderInData) {
-      folderInData.name = value;
-    }
-    folder.name = value;
-
-    // Save to database
-    const Repository = window.Objectiv?.Repository;
-    if (Repository?.updateFolder) {
-      try {
-        await Repository.updateFolder({ id: folder.id, name: value });
-      } catch (err) {
-        console.error('Failed to update folder:', err);
-      }
-    }
-
-    _renderSideList();
-  } else if (folder) {
-    titleEl.textContent = folder.name;
-  }
-
-  titleEl.removeAttribute('contenteditable');
-  titleEl.removeAttribute('spellcheck');
-
+  // Inline-edit handles saving on blur
   AppState.resetPromptState();
   _updateStatusBar();
 }
@@ -660,33 +430,24 @@ export function cancelPrompt() {
 // Helpers
 // ========================================
 
-function restoreElementInPlace(contentEditable, listItem, text) {
-  contentEditable.removeAttribute('contenteditable');
-  contentEditable.removeAttribute('spellcheck');
-  contentEditable.textContent = text;
-}
-
 /**
  * Focus prompt input after render
+ * Note: With inline-edit utility, blur handlers are set up by setupInlineEdit.
+ * This function just focuses the element.
  */
 export function focusPromptInput() {
   const promptMode = AppState.getPromptMode();
   if (!promptMode) return;
 
   setTimeout(() => {
+    // Try contenteditable elements first
     const contentEditable = document.querySelector('.list-item-content[contenteditable="true"], .side-item-name[contenteditable="true"]');
     if (contentEditable) {
       placeCaretAtEnd(contentEditable);
-      contentEditable.addEventListener('blur', () => {
-        if (AppState.shouldSkipBlurHandler()) {
-          AppState.setSkipBlurHandler(false);
-          return;
-        }
-        if (AppState.getPromptMode()) processPromptInput(contentEditable.textContent);
-      }, { once: true });
       return;
     }
 
+    // Fallback to input/textarea
     const input = document.querySelector('.prompt-input');
     if (input) {
       input.focus();
@@ -694,15 +455,7 @@ export function focusPromptInput() {
       input.setSelectionRange(len, len);
       if (input.tagName === 'TEXTAREA') {
         autoResizeTextarea(input);
-        input.addEventListener('input', () => autoResizeTextarea(input));
       }
-      input.addEventListener('blur', () => {
-        if (AppState.shouldSkipBlurHandler()) {
-          AppState.setSkipBlurHandler(false);
-          return;
-        }
-        if (AppState.getPromptMode()) processPromptInput(input.value);
-      }, { once: true });
     }
   }, 0);
 }

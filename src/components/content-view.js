@@ -11,6 +11,7 @@ import * as TabContentManager from '../state/tab-content-manager.js';
 import { formatTimestamp, formatDuration } from '../utils.js';
 import { renderContentNextStep } from './next-step-timer.js';
 import GlobalNav from './global-nav.js';
+import { setupInlineEdit } from '../utils/inline-edit.js';
 
 // ========================================
 // Callbacks (set by app.js)
@@ -32,13 +33,14 @@ export function setCallbacks({ startAddPriority, startLogStep, refreshClarity })
 
 /**
  * Create a modular list item element
+ * Content is always contenteditable - Notion-style inline editing.
  */
 function createListItem(options = {}) {
   const {
     icon = '',
     iconClass = '',
     content = '',
-    contentEditable = false,
+    contentEditable = true, // Always editable by default
     meta = '',
     metaClass = '',
     selected = false,
@@ -61,10 +63,10 @@ function createListItem(options = {}) {
   const iconClasses = ['list-item-icon', iconClass].filter(Boolean).join(' ');
   html += `<span class="${iconClasses}">${icon}</span>`;
 
-  // Content column
-  const contentAttrs = contentEditable ? ' contenteditable="true" spellcheck="false"' : '';
+  // Content column - always contenteditable with spellcheck
   const escapedContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  html += `<span class="list-item-content"${contentAttrs}>${escapedContent}</span>`;
+  const editableAttr = contentEditable ? 'contenteditable="true" spellcheck="true"' : '';
+  html += `<span class="list-item-content" ${editableAttr}>${escapedContent}</span>`;
 
   // Meta column
   if (meta) {
@@ -100,8 +102,19 @@ function createConfirmRow(text) {
 /**
  * Render the content view (selected objective, folder, or home)
  * Uses persistent containers per tab for browser-like behavior.
+ * @param {Object} options - Options for rendering
+ * @param {boolean} options.force - Force re-render even if actively editing
  */
-export function renderContentView() {
+export function renderContentView(options = {}) {
+  const { force = false } = options;
+
+  // Skip re-render if user is actively editing (unless forced)
+  if (!force && AppState.isActivelyEditing()) {
+    const activeTabId = TabState.getActiveTabId();
+    TabContentManager.showContainer(activeTabId);
+    return;
+  }
+
   const activeTabId = TabState.getActiveTabId();
   // Get view mode from TabState (per-tab) not AppState (global)
   // This ensures switching tabs restores the correct view
@@ -182,7 +195,11 @@ function renderHomeViewInContainer(container) {
   if (app) app.classList.remove('web-mode');
 
   headerTitle.textContent = 'Home';
-  if (headerDesc) headerDesc.textContent = 'Welcome to Objectiv';
+  headerTitle.setAttribute('contenteditable', 'false');
+  if (headerDesc) {
+    headerDesc.textContent = 'Welcome to Objectiv';
+    headerDesc.setAttribute('contenteditable', 'false');
+  }
 
   const data = AppState.getData();
   const objectiveCount = data.objectives.length;
@@ -237,7 +254,11 @@ function renderWebViewInContainer(container) {
   }
 
   headerTitle.textContent = 'Web';
-  if (headerDesc) headerDesc.textContent = '';
+  headerTitle.setAttribute('contenteditable', 'false');
+  if (headerDesc) {
+    headerDesc.textContent = '';
+    headerDesc.setAttribute('contenteditable', 'false');
+  }
 
   // IMPORTANT: Capture the tab ID at creation time
   // This ensures webview events update THIS tab, not whatever tab is active when the event fires
@@ -366,7 +387,11 @@ function renderObjectiveViewInContainer(container) {
 
   if (data.objectives.length === 0) {
     headerTitle.textContent = 'No objectives yet';
-    if (headerDesc) headerDesc.textContent = 'Add your first objective to get started';
+    headerTitle.setAttribute('contenteditable', 'false');
+    if (headerDesc) {
+      headerDesc.textContent = 'Add your first objective to get started';
+      headerDesc.setAttribute('contenteditable', 'false');
+    }
     container.innerHTML = '';
     return;
   }
@@ -383,7 +408,41 @@ function renderObjectiveViewInContainer(container) {
 
   const obj = data.objectives[selectedIdx];
   headerTitle.textContent = obj.name;
-  if (headerDesc) headerDesc.textContent = obj.description || '';
+  headerTitle.setAttribute('contenteditable', 'true');
+
+  if (headerDesc) {
+    headerDesc.textContent = obj.description || '';
+    headerDesc.setAttribute('contenteditable', 'true');
+    headerDesc.dataset.placeholder = 'Add a description...';
+  }
+
+  // Setup inline editing on header title
+  setupInlineEdit(headerTitle, {
+    onSave: (newValue) => {
+      obj.name = newValue;
+      const Repository = window.Objectiv?.Repository;
+      Repository?.saveObjective?.(obj);
+      // Update sidebar
+      const SideListState = window.Objectiv?.SideListState;
+      if (SideListState) {
+        _renderSideList();
+      }
+    },
+    restoreOnEmpty: true // Don't allow empty titles
+  });
+
+  // Setup inline editing on description
+  if (headerDesc) {
+    setupInlineEdit(headerDesc, {
+      placeholder: 'Add a description...',
+      allowEmpty: true,
+      onSave: (newValue) => {
+        obj.description = newValue;
+        const Repository = window.Objectiv?.Repository;
+        Repository?.saveObjective?.(obj);
+      }
+    });
+  }
 
   // Render priorities, next step, and steps
   container.innerHTML = '';
@@ -428,7 +487,11 @@ function renderFolderViewInContainer(container) {
 
   if (!folder) {
     headerTitle.textContent = 'Select a folder';
-    if (headerDesc) headerDesc.textContent = '';
+    headerTitle.setAttribute('contenteditable', 'false');
+    if (headerDesc) {
+      headerDesc.textContent = '';
+      headerDesc.setAttribute('contenteditable', 'false');
+    }
     container.innerHTML = '';
     return;
   }
@@ -439,11 +502,37 @@ function renderFolderViewInContainer(container) {
   const folderObjectives = data.objectives.filter(obj => obj.folderId === folder.id);
 
   headerTitle.textContent = folder.name || 'Unnamed Folder';
+  headerTitle.setAttribute('contenteditable', 'true');
+
   if (headerDesc) {
     headerDesc.textContent = folderObjectives.length === 1
       ? '1 objective'
       : `${folderObjectives.length} objectives`;
+    headerDesc.setAttribute('contenteditable', 'false'); // Folder description is auto-generated
   }
+
+  // Setup inline editing on folder title
+  setupInlineEdit(headerTitle, {
+    onSave: async (newValue) => {
+      folder.name = newValue;
+      // Update in data.folders
+      const folderInData = data.folders.find(f => f.id === folder.id);
+      if (folderInData) {
+        folderInData.name = newValue;
+      }
+      // Save to database
+      const Repository = window.Objectiv?.Repository;
+      if (Repository?.updateFolder) {
+        try {
+          await Repository.updateFolder({ id: folder.id, name: newValue });
+        } catch (err) {
+          console.error('Failed to update folder:', err);
+        }
+      }
+      _renderSideList();
+    },
+    restoreOnEmpty: true
+  });
 
   container.innerHTML = '';
 
@@ -529,7 +618,11 @@ function renderSettingsViewInContainer(container) {
   if (app) app.classList.remove('web-mode');
 
   headerTitle.textContent = 'Settings';
-  if (headerDesc) headerDesc.textContent = '';
+  headerTitle.setAttribute('contenteditable', 'false');
+  if (headerDesc) {
+    headerDesc.textContent = '';
+    headerDesc.setAttribute('contenteditable', 'false');
+  }
 
   // Get current theme
   const Platform = window.Objectiv?.Platform;
@@ -594,7 +687,7 @@ export function renderContentPriorities(container, obj) {
   container.appendChild(header);
 
   obj.priorities.forEach((priority, index) => {
-    // Handle confirm mode
+    // Handle confirm mode (for delete confirmation)
     if (promptMode === 'confirm' && promptTargetSection === 'priorities' && promptTargetIndex === index) {
       const div = document.createElement('div');
       div.innerHTML = createConfirmRow(`Delete "${priority.name}"?`);
@@ -603,31 +696,51 @@ export function renderContentPriorities(container, obj) {
     }
 
     const isAdding = promptMode === 'add' && promptTargetSection === 'priorities' && promptTargetIndex === index;
-    const isEditing = promptMode === 'edit' && promptTargetSection === 'priorities' && promptTargetIndex === index;
-    const isRefining = promptMode === 'refine' && promptTargetSection === 'priorities' && promptTargetIndex === index;
-    const isInEditMode = isAdding || isEditing || isRefining;
-
-    let textContent = priority.name;
-    if (isRefining) textContent = priority.description || '';
 
     const listItem = createListItem({
       icon: '',
       iconClass: '',
-      content: textContent,
-      contentEditable: isInEditMode,
+      content: priority.name,
+      contentEditable: true, // Always editable
       meta: '',
       selected: false
     });
 
-    // Add data attributes for edit controller
     listItem.dataset.section = 'priorities';
     listItem.dataset.index = index;
 
-    // Add placeholder for new items
-    if (isAdding) {
-      const contentEl = listItem.querySelector('.list-item-content');
-      if (contentEl) {
-        contentEl.dataset.placeholder = 'Name your priority';
+    const contentEl = listItem.querySelector('.list-item-content');
+    if (contentEl) {
+      // Setup Notion-style inline editing
+      setupInlineEdit(contentEl, {
+        placeholder: isAdding ? 'Name your priority' : '',
+        onSave: (newValue) => {
+          // Update priority name and save
+          priority.name = newValue;
+          const Repository = window.Objectiv?.Repository;
+          Repository?.saveObjective?.(obj);
+
+          // Clear add mode if we were adding
+          if (isAdding) {
+            AppState.resetPromptState();
+          }
+        },
+        onEmpty: () => {
+          // Remove empty priority
+          const idx = obj.priorities.indexOf(priority);
+          if (idx !== -1) {
+            obj.priorities.splice(idx, 1);
+            const Repository = window.Objectiv?.Repository;
+            Repository?.saveObjective?.(obj);
+            AppState.resetPromptState();
+            _renderContentView();
+          }
+        }
+      });
+
+      // Auto-focus new items
+      if (isAdding) {
+        setTimeout(() => contentEl.focus(), 0);
       }
     }
 
@@ -673,6 +786,7 @@ export function renderContentSteps(container, obj) {
     const actualIdx = obj.steps.length - 1 - displayIdx;
     const step = obj.steps[actualIdx];
 
+    // Handle confirm mode (for delete confirmation)
     if (promptMode === 'confirm' && promptTargetSection === 'steps' && promptTargetIndex === actualIdx) {
       const div = document.createElement('div');
       div.innerHTML = createConfirmRow(`Delete "${step.name}"?`);
@@ -684,28 +798,52 @@ export function renderContentSteps(container, obj) {
     const durationStr = step.duration ? ` (${formatDuration(step.duration)})` : '';
     const orderNum = step.orderNumber || (actualIdx + 1);
     const isAdding = promptMode === 'add' && promptTargetSection === 'steps' && promptTargetIndex === actualIdx;
-    const isEditing = promptMode === 'edit' && promptTargetSection === 'steps' && promptTargetIndex === actualIdx;
-    const isInEditMode = isAdding || isEditing;
 
     const listItem = createListItem({
       icon: orderNum.toString(),
       iconClass: '',
       content: step.name,
-      contentEditable: isInEditMode,
+      contentEditable: true, // Always editable
       meta: `<span class="step-timestamp">${timestamp}${durationStr}</span>`,
       metaClass: 'compact',
       selected: false
     });
 
-    // Add data attributes
     listItem.dataset.section = 'steps';
     listItem.dataset.index = actualIdx;
 
-    // Add placeholder for new items
-    if (isAdding) {
-      const contentEl = listItem.querySelector('.list-item-content');
-      if (contentEl) {
-        contentEl.dataset.placeholder = 'What did you do?';
+    const contentEl = listItem.querySelector('.list-item-content');
+    if (contentEl) {
+      // Setup Notion-style inline editing
+      setupInlineEdit(contentEl, {
+        placeholder: isAdding ? 'What did you do?' : '',
+        onSave: (newValue) => {
+          // Update step name and save
+          step.name = newValue;
+          const Repository = window.Objectiv?.Repository;
+          Repository?.saveObjective?.(obj);
+
+          // Clear add mode if we were adding
+          if (isAdding) {
+            AppState.resetPromptState();
+          }
+        },
+        onEmpty: () => {
+          // Remove empty step
+          const idx = obj.steps.indexOf(step);
+          if (idx !== -1) {
+            obj.steps.splice(idx, 1);
+            const Repository = window.Objectiv?.Repository;
+            Repository?.saveObjective?.(obj);
+            AppState.resetPromptState();
+            _renderContentView();
+          }
+        }
+      });
+
+      // Auto-focus new items
+      if (isAdding) {
+        setTimeout(() => contentEl.focus(), 0);
       }
     }
 
