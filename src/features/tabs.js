@@ -130,7 +130,8 @@ function getIconSvgInline(iconType) {
     folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     objective: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
     web: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
-    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+    speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>'
   };
   return icons[iconType] || icons.home;
 }
@@ -414,6 +415,49 @@ export function getActiveTabId() {
   return TabState.getActiveTabId();
 }
 
+/**
+ * Show audio playing indicator on a tab
+ * @param {string} tabId - The tab ID to show the indicator on
+ */
+export function showAudioIndicator(tabId) {
+  const tabEl = document.querySelector(`.header-tab[data-tab-id="${tabId}"]`);
+  if (!tabEl) return;
+
+  // Don't add duplicate indicator
+  if (tabEl.querySelector('.tab-audio-indicator')) return;
+
+  // Create audio indicator element
+  const indicator = document.createElement('span');
+  indicator.className = 'tab-audio-indicator';
+  indicator.innerHTML = getIconSvgInline('speaker');
+  indicator.title = 'Playing audio';
+
+  // Insert after the icon, before the title
+  const titleEl = tabEl.querySelector('.tab-title');
+  if (titleEl) {
+    tabEl.insertBefore(indicator, titleEl);
+  }
+
+  // Add class to tab for styling
+  tabEl.classList.add('playing-audio');
+}
+
+/**
+ * Hide audio playing indicator on a tab
+ * @param {string} tabId - The tab ID to hide the indicator from
+ */
+export function hideAudioIndicator(tabId) {
+  const tabEl = document.querySelector(`.header-tab[data-tab-id="${tabId}"]`);
+  if (!tabEl) return;
+
+  const indicator = tabEl.querySelector('.tab-audio-indicator');
+  if (indicator) {
+    indicator.remove();
+  }
+
+  tabEl.classList.remove('playing-audio');
+}
+
 // ========================================
 // Default Export
 // ========================================
@@ -426,5 +470,7 @@ export default {
   updateActiveTabIcon,
   updateTabTitleById,
   updateTabIconById,
-  getActiveTabId
+  getActiveTabId,
+  showAudioIndicator,
+  hideAudioIndicator
 };

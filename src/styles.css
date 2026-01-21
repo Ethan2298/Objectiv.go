@@ -1065,6 +1065,33 @@ body.solarized-mode .web-search-dropdown {
   object-fit: contain;
 }
 
+.tab-audio-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  color: var(--accent);
+  animation: pulse-audio 1.5s ease-in-out infinite;
+}
+
+.tab-audio-indicator svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+}
+
+@keyframes pulse-audio {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.header-tab.playing-audio .tab-icon {
+  display: none;
+}
+
 .tab-title {
   flex: 1;
   min-width: 0;

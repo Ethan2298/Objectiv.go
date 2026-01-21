@@ -352,6 +352,22 @@ function renderWebViewInContainer(container) {
     updateOwnerTab();
   });
 
+  // Show audio indicator when media starts playing
+  webview.addEventListener('media-started-playing', () => {
+    const Tabs = window.Objectiv?.Tabs;
+    if (Tabs) {
+      Tabs.showAudioIndicator(ownerTabId);
+    }
+  });
+
+  // Hide audio indicator when media pauses/stops
+  webview.addEventListener('media-paused', () => {
+    const Tabs = window.Objectiv?.Tabs;
+    if (Tabs) {
+      Tabs.hideAudioIndicator(ownerTabId);
+    }
+  });
+
   // Note: New window/tab handling (target="_blank" links) is done in main.js
   // via setWindowOpenHandler on the webview's webContents
 }
