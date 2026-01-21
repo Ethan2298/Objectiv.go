@@ -16,7 +16,7 @@ import * as TabState from './tab-state.js';
 
 const state = {
   // Data
-  data: { objectives: [], folders: [] },
+  data: { objectives: [], folders: [], notes: [] },
 
   // Mobile state
   isMobile: false,
@@ -69,6 +69,10 @@ export function getObjectives() {
 
 export function getFolders() {
   return state.data.folders;
+}
+
+export function getNotes() {
+  return state.data.notes;
 }
 
 /**
@@ -198,6 +202,10 @@ export function setObjectives(objectives) {
 
 export function setFolders(folders) {
   state.data.folders = folders;
+}
+
+export function setNotes(notes) {
+  state.data.notes = notes;
 }
 
 /**
@@ -344,6 +352,7 @@ export default {
   getData,
   getObjectives,
   getFolders,
+  getNotes,
   getSelectedObjectiveIndex,
   getSelectedObjective,
   getViewMode,
@@ -369,6 +378,7 @@ export default {
   setData,
   setObjectives,
   setFolders,
+  setNotes,
   setSelectedObjectiveIndex,
   setViewMode,
   setIsMobile,

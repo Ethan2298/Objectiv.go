@@ -56,6 +56,7 @@ export async function renderSideList() {
   SideListState.rebuildItems({
     objectives: data.objectives,
     folders: data.folders || [],
+    notes: data.notes || [],
     isAddingObjective
   });
 
@@ -278,6 +279,36 @@ function createSideListItem(itemData, idx, isSelected) {
 
       setupDraggable(item, 'bookmark', itemData.bookmarkId, itemData.data);
       setupDropTarget(item, 'bookmark', itemData.bookmarkId);
+      break;
+
+    case ItemType.NOTE:
+      item.className = 'side-item note-row' + (isSelected ? ' selected' : '');
+      item.dataset.type = 'note';
+      item.dataset.noteId = itemData.noteId;
+      item.dataset.folderId = itemData.folderId || '';
+
+      // Note icon (document/page icon)
+      const noteIcon = `<svg class="note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>`;
+
+      item.innerHTML = `
+        ${noteIcon}
+        <span class="side-item-name">${itemData.name || 'Untitled Note'}</span>${indicator}
+      `;
+
+      item.onclick = () => handleNoteClick(idx, itemData);
+
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showNoteContextMenu(e, itemData);
+      });
+
+      setupDraggable(item, 'note', itemData.noteId, itemData.data);
+      setupDropTarget(item, 'note', itemData.noteId);
       break;
 
     default:
@@ -526,6 +557,29 @@ function handleBookmarkClick(idx, itemData) {
 }
 
 /**
+ * Handle click on a note item
+ */
+function handleNoteClick(idx, itemData) {
+  const SideListState = window.Objectiv?.SideListState;
+
+  // Update selection
+  SideListState.setSelectedIndex(idx);
+  _playNotch();
+
+  // Switch to note view mode
+  AppState.setViewMode('note');
+
+  updateSideListSelection();
+  _renderContentView();
+  _updateTabTitle();
+
+  if (AppState.isMobile()) {
+    const Mobile = window.Objectiv?.Mobile;
+    if (Mobile?.setMobileView) Mobile.setMobileView('detail');
+  }
+}
+
+/**
  * Show context menu for bookmark items
  */
 function showBookmarkContextMenu(e, itemData) {
@@ -553,6 +607,51 @@ function showBookmarkContextMenu(e, itemData) {
                 _updateView();
               } catch (err) {
                 console.error('Failed to delete bookmark:', err);
+              }
+            }
+          });
+        }
+      }
+    ]
+  });
+}
+
+/**
+ * Show context menu for note items
+ */
+function showNoteContextMenu(e, itemData) {
+  const ContextMenu = window.Objectiv?.ContextMenu;
+  const DeleteModal = window.Objectiv?.DeleteModal;
+  const NoteStorage = window.Objectiv?.NoteStorage;
+
+  if (!ContextMenu) return;
+
+  ContextMenu.showContextMenu({
+    x: e.clientX,
+    y: e.clientY,
+    items: [
+      {
+        label: 'Delete',
+        danger: true,
+        action: () => {
+          if (!DeleteModal) return;
+
+          DeleteModal.showDeleteModal({
+            itemName: itemData.name || 'Untitled Note',
+            itemType: 'note',
+            onConfirm: async () => {
+              try {
+                if (NoteStorage?.deleteNote) {
+                  await NoteStorage.deleteNote(itemData.noteId);
+                }
+
+                // Update local state
+                const data = AppState.getData();
+                data.notes = data.notes.filter(n => n.id !== itemData.noteId);
+
+                _updateView();
+              } catch (err) {
+                console.error('Failed to delete note:', err);
               }
             }
           });
@@ -705,6 +804,8 @@ function setupDropTarget(element, targetType, targetId) {
         await handleFolderDrop(dragId, dragData, insertPosition);
       } else if (dragType === 'bookmark') {
         await handleBookmarkDrop(dragId, dragData, insertPosition);
+      } else if (dragType === 'note') {
+        await handleNoteDrop(dragId, dragData, insertPosition);
       }
     } catch (err) {
       console.error('Drop failed:', err);
@@ -807,6 +908,41 @@ async function handleBookmarkDrop(dragId, dragData, insertPosition) {
   }
 
   BookmarkStorage.updateBookmarkOrder(dragId, newOrderIndex, newFolderId);
+  renderSideList();
+}
+
+async function handleNoteDrop(dragId, dragData, insertPosition) {
+  if (!insertPosition) return;
+
+  const NoteStorage = window.Objectiv?.NoteStorage;
+  if (!NoteStorage?.updateNoteOrder) return;
+
+  const { targetId, targetType, position, folderId } = insertPosition;
+
+  const newFolderId = targetType === 'unfiled' ? null :
+                      targetType === 'folder' ? targetId : folderId;
+
+  // Calculate new order index based on position
+  const data = AppState.getData();
+  const notes = data.notes || [];
+  let newOrderIndex;
+
+  if (targetType === 'folder') {
+    // Moving into a folder - put at end
+    const folderNotes = notes.filter(n => n.folderId === targetId);
+    newOrderIndex = folderNotes.length > 0
+      ? Math.max(...folderNotes.map(n => n.orderIndex || 0)) + 1000
+      : 1000;
+  } else {
+    // Use a simple timestamp-based order
+    newOrderIndex = Date.now();
+  }
+
+  await NoteStorage.updateNoteOrder(dragId, newOrderIndex, newFolderId);
+
+  // Reload notes
+  const reloadedNotes = await NoteStorage.loadAllNotes();
+  AppState.setNotes(reloadedNotes);
   renderSideList();
 }
 

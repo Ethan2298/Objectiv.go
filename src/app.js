@@ -11,6 +11,7 @@
 
 import * as Repository from './data/repository.js';
 import * as BookmarkStorage from './data/bookmark-storage.js';
+import * as NoteStorage from './data/note-storage.js';
 import * as TabState from './state/tab-state.js';
 import * as TabContentManager from './state/tab-content-manager.js';
 import * as SideListState from './state/side-list-state.js';
@@ -55,6 +56,7 @@ import * as SideList from './components/side-list.js';
 import * as ContentView from './components/content-view.js';
 import * as NextStepTimer from './components/next-step-timer.js';
 import * as GlobalNav from './components/global-nav.js';
+import * as TiptapEditor from './components/tiptap-editor.js';
 
 // ========================================
 // Global Window Reference
@@ -66,6 +68,7 @@ window.Objectiv = {
   // Data & State
   Repository,
   BookmarkStorage,
+  NoteStorage,
   TabState,
   TabContentManager,
   SideListState,
@@ -97,6 +100,7 @@ window.Objectiv = {
   ContentView,
   NextStepTimer,
   GlobalNav,
+  TiptapEditor,
   Tabs
 };
 
@@ -134,7 +138,8 @@ function wireCallbacks() {
   ContentView.setCallbacks({
     startAddPriority: PromptController.startAddPriority,
     startLogStep: PromptController.startLogStep,
-    refreshClarity: () => {} // Clarity disabled
+    refreshClarity: () => {}, // Clarity disabled
+    renderSideList: SideList.renderSideList
   });
 
   // Wire NextStepTimer callbacks
@@ -253,6 +258,15 @@ function updateTabTitleFromSelection() {
       windowTitle = folder.name || 'Folder';
     }
     icon = 'folder';
+  } else if (selection.type === 'note' && selection.id) {
+    // Look up note by ID from data
+    const notes = AppState.getNotes();
+    const note = notes.find(n => n.id === selection.id);
+    if (note) {
+      title = note.name || 'Untitled Note';
+      windowTitle = note.name || 'Untitled Note';
+    }
+    icon = 'note';
   } else if (viewMode === 'empty' || !selection.id) {
     title = 'Objectiv';
     icon = 'home';
@@ -327,6 +341,13 @@ async function initStorage() {
       AppState.setFolders(folders);
     }
 
+    // Load notes
+    if (NoteStorage.loadAllNotes) {
+      const notes = await NoteStorage.loadAllNotes();
+      console.log('Loaded', notes.length, 'notes from Supabase');
+      AppState.setNotes(notes);
+    }
+
     updateView();
     Platform.updateStatusReporter();
 
@@ -352,6 +373,17 @@ async function initStorage() {
         updateView();
       });
       console.log('Subscribed to folder realtime updates');
+    }
+
+    // Subscribe to note changes
+    if (NoteStorage.subscribeToNoteChanges) {
+      NoteStorage.subscribeToNoteChanges(async (payload) => {
+        console.log('Note realtime update received, refreshing...');
+        const notes = await NoteStorage.loadAllNotes();
+        AppState.setNotes(notes);
+        updateView();
+      });
+      console.log('Subscribed to note realtime updates');
     }
   } catch (e) {
     console.warn('Storage init failed:', e);
@@ -407,6 +439,40 @@ async function addNewObjective() {
   await PromptController.startAddObjective();
 }
 
+/**
+ * Add new note
+ */
+async function addNewNote() {
+  try {
+    if (!NoteStorage.saveNote) {
+      console.warn('NoteStorage.saveNote not available');
+      return;
+    }
+
+    const note = Repository.createNote('New Note', '', null, 0);
+    const savedNote = await NoteStorage.saveNote(note);
+    console.log('Created note:', savedNote);
+
+    // Reload notes
+    const notes = await NoteStorage.loadAllNotes();
+    AppState.setNotes(notes);
+
+    // Select the new note
+    if (SideListState) {
+      SideList.renderSideList();
+      SideListState.selectItem(SideListState.ItemType.NOTE, savedNote.id);
+    }
+
+    // Switch to note view
+    AppState.setViewMode('note');
+    ContentView.renderContentView();
+    updateTabTitleFromSelection();
+  } catch (err) {
+    console.error('Failed to create note:', err);
+    showMessage('Failed to create note');
+  }
+}
+
 // ========================================
 // Event Handlers
 // ========================================
@@ -424,7 +490,8 @@ function initEventHandlers() {
 
     const menuItems = [
       { label: 'New Folder', action: () => addNewFolder() },
-      { label: 'New Objective', action: () => addNewObjective() }
+      { label: 'New Objective', action: () => addNewObjective() },
+      { label: 'New Note', action: () => addNewNote() }
     ];
 
     const estimatedMenuHeight = menuItems.length * 29 + 8;
@@ -574,8 +641,8 @@ export async function init() {
   // Initialize mobile
   Mobile.init();
 
-  // Show intro animation
-  await Intro.showIntro();
+  // Skip intro - show app immediately
+  Intro.skipIntro();
 
   // Initialize storage (async, non-blocking)
   // After storage loads, apply initial route if present
@@ -625,6 +692,7 @@ export {
   // Data & State
   Repository,
   BookmarkStorage,
+  NoteStorage,
   TabState,
   TabContentManager,
   SideListState,
@@ -662,12 +730,14 @@ export {
   updateStatusBar,
   showMessage,
   addNewFolder,
-  addNewObjective
+  addNewObjective,
+  addNewNote
 };
 
 export default {
   Repository,
   BookmarkStorage,
+  NoteStorage,
   TabState,
   TabContentManager,
   SideListState,
@@ -696,5 +766,6 @@ export default {
   updateStatusBar,
   showMessage,
   addNewFolder,
-  addNewObjective
+  addNewObjective,
+  addNewNote
 };

@@ -33,6 +33,7 @@ export const ItemType = {
   OBJECTIVE: 'objective',
   FOLDER: 'folder',
   BOOKMARK: 'bookmark',
+  NOTE: 'note',
   ADD_OBJECTIVE: 'add-objective',
   ADD_FOLDER: 'add-folder'
 };
@@ -60,6 +61,9 @@ export function getSelectedIndex() {
     }
     if (selection.type === 'bookmark' && item.type === ItemType.BOOKMARK) {
       return item.bookmarkId === selection.id;
+    }
+    if (selection.type === 'note' && item.type === ItemType.NOTE) {
+      return item.noteId === selection.id;
     }
     return false;
   });
@@ -110,6 +114,8 @@ export function setSelectedIndex(index) {
       TabState.setSelection(item.folderId, 'folder');
     } else if (item.type === ItemType.BOOKMARK) {
       TabState.setSelection(item.bookmarkId, 'bookmark');
+    } else if (item.type === ItemType.NOTE) {
+      TabState.setSelection(item.noteId, 'note');
     }
   }
 }
@@ -143,6 +149,7 @@ export function selectItem(type, identifier) {
     if (type === ItemType.OBJECTIVE) return item.objectiveId === identifier;
     if (type === ItemType.FOLDER) return item.folderId === identifier;
     if (type === ItemType.BOOKMARK) return item.bookmarkId === identifier;
+    if (type === ItemType.NOTE) return item.noteId === identifier;
     return false;
   });
   if (index !== -1) {
@@ -193,9 +200,10 @@ export function collapseFolder(folderId) {
  * @param {Object} options
  * @param {Array} options.objectives - Array of objective objects
  * @param {Array} options.folders - Array of folder objects
+ * @param {Array} options.notes - Array of note objects
  * @param {boolean} options.isAddingObjective - Whether currently adding an objective
  */
-export function rebuildItems({ objectives = [], folders = [], isAddingObjective = false }) {
+export function rebuildItems({ objectives = [], folders = [], notes = [], isAddingObjective = false }) {
   const items = [];
 
   // Store folders for reference
@@ -222,9 +230,13 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
   const unfiledBookmarks = bookmarks.filter(bm => !bm.folderId);
   const filedBookmarks = bookmarks.filter(bm => bm.folderId);
 
+  // Separate unfiled and filed notes
+  const unfiledNotes = notes.filter(n => !n.folderId);
+  const filedNotes = notes.filter(n => n.folderId);
+
   // Build folder tree structure
   const folderMap = new Map();
-  folders.forEach(f => folderMap.set(f.id, { ...f, children: [], objectives: [], bookmarks: [] }));
+  folders.forEach(f => folderMap.set(f.id, { ...f, children: [], objectives: [], bookmarks: [], notes: [] }));
 
   // Assign objectives to folders
   filedObjectives.forEach(obj => {
@@ -248,6 +260,17 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
     }
   });
 
+  // Assign notes to folders
+  filedNotes.forEach(note => {
+    const folder = folderMap.get(note.folderId);
+    if (folder) {
+      folder.notes.push(note);
+    } else {
+      // Folder not found, treat as unfiled
+      unfiledNotes.push(note);
+    }
+  });
+
   // Build folder hierarchy (assign children to parents)
   const rootFolders = [];
   folderMap.forEach(folder => {
@@ -263,16 +286,18 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
     }
   });
 
-  // Combine unfiled objectives, bookmarks, and root folders, then sort by orderIndex
+  // Combine unfiled objectives, bookmarks, notes, and root folders, then sort by orderIndex
   const rootItems = [
     ...unfiledObjectives.map(obj => ({ type: 'objective', data: obj, orderIndex: obj.orderIndex || 0 })),
     ...unfiledBookmarks.map(bm => ({ type: 'bookmark', data: bm, orderIndex: bm.orderIndex || 0 })),
+    ...unfiledNotes.map(note => ({ type: 'note', data: note, orderIndex: note.orderIndex || 0 })),
     ...rootFolders.map(folder => ({ type: 'folder', data: folder, orderIndex: folder.orderIndex || 0 }))
   ].sort((a, b) => a.orderIndex - b.orderIndex);
 
   // Recursively add folders and their contents
   function addFolderItems(folder, depth) {
     const hasBookmarks = folder.bookmarks && folder.bookmarks.length > 0;
+    const hasNotes = folder.notes && folder.notes.length > 0;
     items.push({
       type: ItemType.FOLDER,
       folderId: folder.id,
@@ -280,15 +305,16 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
       name: folder.name,
       parentId: folder.parentId,
       depth,
-      hasChildren: folder.children.length > 0 || folder.objectives.length > 0 || hasBookmarks
+      hasChildren: folder.children.length > 0 || folder.objectives.length > 0 || hasBookmarks || hasNotes
     });
 
     // Only show contents if folder is expanded (use expandedFolders from TabState)
     if (expandedFolders.has(folder.id)) {
-      // Combine objectives, bookmarks, and child folders, then sort by orderIndex
+      // Combine objectives, bookmarks, notes, and child folders, then sort by orderIndex
       const folderContents = [
         ...folder.objectives.map(obj => ({ type: 'objective', data: obj, orderIndex: obj.orderIndex || 0 })),
         ...(folder.bookmarks || []).map(bm => ({ type: 'bookmark', data: bm, orderIndex: bm.orderIndex || 0 })),
+        ...(folder.notes || []).map(note => ({ type: 'note', data: note, orderIndex: note.orderIndex || 0 })),
         ...folder.children.map(child => ({ type: 'folder', data: child, orderIndex: child.orderIndex || 0 }))
       ].sort((a, b) => a.orderIndex - b.orderIndex);
 
@@ -317,6 +343,16 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
             folderId: folder.id,
             depth: depth + 1
           });
+        } else if (item.type === 'note') {
+          const note = item.data;
+          items.push({
+            type: ItemType.NOTE,
+            noteId: note.id,
+            data: note,
+            name: note.name,
+            folderId: folder.id,
+            depth: depth + 1
+          });
         } else {
           addFolderItems(item.data, depth + 1);
         }
@@ -324,7 +360,7 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
     }
   }
 
-  // Add root items (interleaved objectives, bookmarks, and folders)
+  // Add root items (interleaved objectives, bookmarks, notes, and folders)
   rootItems.forEach(item => {
     if (item.type === 'objective') {
       const obj = item.data;
@@ -347,6 +383,16 @@ export function rebuildItems({ objectives = [], folders = [], isAddingObjective 
         name: bm.title,
         url: bm.url,
         faviconUrl: bm.faviconUrl,
+        folderId: null,
+        depth: 0
+      });
+    } else if (item.type === 'note') {
+      const note = item.data;
+      items.push({
+        type: ItemType.NOTE,
+        noteId: note.id,
+        data: note,
+        name: note.name,
         folderId: null,
         depth: 0
       });

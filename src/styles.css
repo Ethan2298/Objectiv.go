@@ -1219,6 +1219,8 @@ body.solarized-mode .tab-add:hover {
   background: transparent;
   padding: 96px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #content-header {
@@ -1281,8 +1283,11 @@ body.solarized-mode .tab-add:hover {
 }
 
 #content-body {
-  flex-shrink: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: 0;
+  min-height: 0;
 }
 
 /* Tab content containers - hidden by default, shown when active */
@@ -1290,10 +1295,12 @@ body.solarized-mode .tab-add:hover {
   display: none;
   width: 100%;
   height: 100%;
+  flex-direction: column;
 }
 
 .tab-container.active {
-  display: block;
+  display: flex;
+  flex: 1;
 }
 
 /* Ensure web view containers fill height properly */
@@ -2895,7 +2902,7 @@ body.solarized-mode .side-item.folder-row.selected {
 
 
 /* ========================================
-   Modal Overlays (PIN, Supabase Config)
+   Modal Overlays
    ======================================== */
 .modal-overlay {
   position: fixed;
@@ -3307,4 +3314,193 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
     width: 20px;
     height: 20px;
   }
+}
+
+/* ========================================
+   Note Item Styles
+   ======================================== */
+
+/* Note icon in sidebar */
+.note-icon {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  flex-shrink: 0;
+  margin-right: 6px;
+  stroke: var(--text-muted);
+  fill: none;
+}
+
+.side-item.selected .note-icon {
+  stroke: var(--accent);
+}
+
+/* Note row in sidebar */
+.side-item.note-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* Note row indentation - same as objectives and bookmarks */
+.side-item[data-type="note"] {
+  padding-left: 16px;
+}
+
+.side-item[data-type="note"][data-depth="1"] { padding-left: 34px; }
+.side-item[data-type="note"][data-depth="2"] { padding-left: 42px; }
+.side-item[data-type="note"][data-depth="3"] { padding-left: 50px; }
+.side-item[data-type="note"][data-depth="4"] { padding-left: 58px; }
+
+/* ========================================
+   Note Editor Styles
+   ======================================== */
+
+/* Container for the note editor - Notion-style full height */
+.note-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+}
+
+/* Tiptap editor wrapper - fills entire area */
+.note-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+
+/* Note toolbar - simplified (no save/cancel) */
+.note-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.note-toolbar button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.note-toolbar button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.note-toolbar button.is-active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.note-toolbar .separator {
+  width: 1px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+/* Note editor container fills available space */
+.note-editor-wrapper .tiptap-editor-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  cursor: text;
+}
+
+/* Tiptap editor content area for notes - Notion-style full area */
+.note-editor-wrapper .tiptap-editor,
+.note-editor-wrapper .ProseMirror {
+  flex: 1;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.7;
+  cursor: text;
+}
+
+/* Ensure the entire note editor area shows text cursor */
+.note-editor-container {
+  cursor: text;
+}
+
+.note-editor-wrapper {
+  cursor: text;
+}
+
+.note-editor-wrapper .tiptap-editor:focus,
+.note-editor-wrapper .ProseMirror:focus {
+  outline: none;
+}
+
+/* Placeholder styling for empty note */
+.note-editor-wrapper .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--text-dim);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Fallback textarea for notes */
+.note-fallback-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 300px;
+}
+
+.note-content-textarea {
+  flex: 1;
+  min-height: 200px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.note-content-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.note-content-textarea::placeholder {
+  color: var(--text-dim);
+}
+
+/* Loading state for notes */
+.note-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* Empty note hint */
+.note-empty-hint {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 12px 0;
 }

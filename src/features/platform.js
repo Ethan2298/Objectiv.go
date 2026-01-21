@@ -1,7 +1,7 @@
 /**
  * Platform Module
  *
- * Platform detection, PIN protection, theme toggle, and status reporter.
+ * Platform detection, theme toggle, and status reporter.
  */
 
 import AppState from '../state/app-state.js';
@@ -13,59 +13,6 @@ import { createNewTab } from './tabs.js';
 
 export const isElectron = !!(window.electronAPI);
 export const isBrowser = !isElectron;
-
-// ========================================
-// PIN Protection
-// ========================================
-
-const APP_PIN = '2298';
-const PIN_AUTH_KEY = 'objectiv-authenticated';
-
-export function initPinProtection() {
-  const pinModal = document.getElementById('pin-modal');
-  const pinInput = document.getElementById('pin-input');
-  const pinError = document.getElementById('pin-error');
-
-  if (!pinModal || !pinInput) return;
-
-  // Check if already authenticated
-  if (localStorage.getItem(PIN_AUTH_KEY) === 'true') {
-    pinModal.style.display = 'none';
-    return;
-  }
-
-  // Show modal and focus input
-  pinModal.style.display = 'flex';
-  setTimeout(() => pinInput.focus(), 100);
-
-  // Handle PIN input
-  pinInput.addEventListener('input', () => {
-    if (pinError) pinError.style.display = 'none';
-    if (pinInput.value.length === 4) {
-      if (pinInput.value === APP_PIN) {
-        localStorage.setItem(PIN_AUTH_KEY, 'true');
-        pinModal.style.display = 'none';
-      } else {
-        if (pinError) pinError.style.display = 'block';
-        pinInput.value = '';
-        pinInput.focus();
-      }
-    }
-  });
-
-  // Handle Enter key
-  pinInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && pinInput.value.length === 4) {
-      if (pinInput.value === APP_PIN) {
-        localStorage.setItem(PIN_AUTH_KEY, 'true');
-        pinModal.style.display = 'none';
-      } else {
-        if (pinError) pinError.style.display = 'block';
-        pinInput.value = '';
-      }
-    }
-  });
-}
 
 // ========================================
 // Theme Management
@@ -305,7 +252,6 @@ export function init() {
   testLocalStorage();
 
   // Initialize features
-  initPinProtection();
   initSettingsButton();
   initStatusReporter();
   initWindowControls();
@@ -319,7 +265,6 @@ export function init() {
 export default {
   isElectron,
   isBrowser,
-  initPinProtection,
   applyStoredTheme,
   getCurrentTheme,
   setTheme,

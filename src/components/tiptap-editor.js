@@ -530,18 +530,198 @@ function nodeToMarkdown(node, listDepth = 0) {
 }
 
 // ========================================
+// Note Editor (Auto-save mode)
+// ========================================
+
+let noteEditorInstance = null;
+let noteAutoSaveCallback = null;
+let noteAutoSaveTimeout = null;
+const NOTE_AUTOSAVE_DELAY = 1000; // 1 second debounce
+
+/**
+ * Create toolbar HTML for note editor (minimal version)
+ */
+function createNoteToolbarHTML() {
+  const groups = toolbarButtons.map(group => {
+    const buttons = group.items.map(btn =>
+      `<button class="editor-toolbar-btn" data-command="${btn.id}" title="${btn.title}">
+        <span class="btn-icon">${btn.icon}</span>
+      </button>`
+    ).join('');
+    return `<div class="editor-toolbar-group">${buttons}</div>`;
+  }).join('');
+
+  return `
+    <div class="editor-toolbar note-toolbar">
+      ${groups}
+    </div>
+  `;
+}
+
+/**
+ * Create note editor container HTML - minimal Notion-style (no toolbar)
+ */
+function createNoteEditorHTML() {
+  return `
+    <div class="tiptap-editor-wrapper note-editor-wrapper">
+      <div class="tiptap-editor-container">
+        <div id="tiptap-note-editor"></div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Initialize the editor for note content with auto-save
+ * @param {string} content - HTML content
+ * @param {string} noteId - ID of the note
+ * @param {HTMLElement} container - Container element
+ * @param {Function} onAutoSave - Callback when content changes (receives HTML)
+ */
+export async function initNoteEditor(content, noteId, container, onAutoSave) {
+  // Load Tiptap if not already loaded
+  await loadTiptap();
+
+  // Destroy existing note editor
+  destroyNoteEditor();
+
+  // Store auto-save callback
+  noteAutoSaveCallback = onAutoSave;
+
+  // Insert editor HTML
+  container.innerHTML = createNoteEditorHTML();
+
+  // Get editor element
+  const editorElement = container.querySelector('#tiptap-note-editor');
+
+  // Create Tiptap editor
+  noteEditorInstance = new Editor({
+    element: editorElement,
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3, 4, 5, 6] },
+      }),
+      Placeholder.configure({
+        placeholder: 'Write your note...',
+      }),
+    ],
+    content: content || '<p></p>',
+    editorProps: {
+      attributes: {
+        class: 'tiptap-prose note-prose',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      // Debounced auto-save
+      if (noteAutoSaveTimeout) {
+        clearTimeout(noteAutoSaveTimeout);
+      }
+      noteAutoSaveTimeout = setTimeout(() => {
+        triggerNoteAutoSave();
+      }, NOTE_AUTOSAVE_DELAY);
+    },
+    onBlur: () => {
+      // Save immediately on blur
+      if (noteAutoSaveTimeout) {
+        clearTimeout(noteAutoSaveTimeout);
+        noteAutoSaveTimeout = null;
+      }
+      triggerNoteAutoSave();
+    },
+  });
+
+  // Focus editor
+  noteEditorInstance.commands.focus('end');
+
+  return noteEditorInstance;
+}
+
+/**
+ * Trigger auto-save for note editor
+ */
+function triggerNoteAutoSave() {
+  if (!noteEditorInstance || !noteAutoSaveCallback) return;
+
+  const html = noteEditorInstance.getHTML();
+  noteAutoSaveCallback(html);
+}
+
+/**
+ * Destroy note editor instance
+ */
+export function destroyNoteEditor() {
+  if (noteAutoSaveTimeout) {
+    clearTimeout(noteAutoSaveTimeout);
+    noteAutoSaveTimeout = null;
+  }
+  if (noteEditorInstance) {
+    noteEditorInstance.destroy();
+    noteEditorInstance = null;
+  }
+  noteAutoSaveCallback = null;
+}
+
+/**
+ * Setup toolbar handlers for note editor
+ */
+function setupNoteToolbarHandlers(container) {
+  const buttons = container.querySelectorAll('.editor-toolbar-btn');
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const command = btn.dataset.command;
+      handleNoteToolbarCommand(command);
+    });
+  });
+}
+
+/**
+ * Handle note toolbar command
+ */
+function handleNoteToolbarCommand(commandId) {
+  if (!noteEditorInstance) return;
+
+  // Find and execute formatting command
+  for (const group of toolbarButtons) {
+    const btn = group.items.find(b => b.id === commandId);
+    if (btn) {
+      btn.command(noteEditorInstance);
+      updateNoteToolbarState();
+      return;
+    }
+  }
+}
+
+/**
+ * Update note toolbar button active states
+ */
+function updateNoteToolbarState() {
+  if (!noteEditorInstance) return;
+
+  const container = document.querySelector('.note-editor-wrapper');
+  if (!container) return;
+
+  for (const group of toolbarButtons) {
+    for (const btn of group.items) {
+      const btnEl = container.querySelector(`[data-command="${btn.id}"]`);
+      if (btnEl && btn.isActive) {
+        btnEl.classList.toggle('is-active', btn.isActive(noteEditorInstance));
+      }
+    }
+  }
+}
+
+// ========================================
 // Exports
 // ========================================
 
+// Note: initEditor, destroyEditor, isEditorActive, hasChanges, setOnSave,
+// initNoteEditor, destroyNoteEditor are already exported at their declarations
 export {
   loadTiptap,
-  initEditor,
-  destroyEditor,
-  isEditorActive,
-  hasChanges,
   saveContent,
   cancelEditing,
-  // setOnSave already exported inline at declaration
   htmlToMarkdown,
   markdownToHtml,
 };
@@ -557,4 +737,6 @@ export default {
   setOnSave,
   htmlToMarkdown,
   markdownToHtml,
+  initNoteEditor,
+  destroyNoteEditor,
 };

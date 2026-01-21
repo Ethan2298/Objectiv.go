@@ -25,6 +25,14 @@ import {
   subscribeToFolderChanges
 } from './folder-storage.js';
 
+import {
+  loadAllNotes,
+  saveNote,
+  deleteNote,
+  updateNoteOrder,
+  subscribeToNoteChanges
+} from './note-storage.js';
+
 // ========================================
 // Configuration
 // ========================================
@@ -264,6 +272,17 @@ export {
   subscribeToFolderChanges
 };
 
+/**
+ * Note operations - re-export from note-storage
+ */
+export {
+  loadAllNotes,
+  saveNote,
+  deleteNote,
+  updateNoteOrder,
+  subscribeToNoteChanges
+};
+
 // ========================================
 // Factory Functions
 // ========================================
@@ -313,6 +332,21 @@ export function createStep(name = '', orderNumber = 1) {
   };
 }
 
+/**
+ * Create a new note
+ */
+export function createNote(name = '', content = '', folderId = null, orderIndex = 0) {
+  return {
+    id: null, // Let Supabase generate UUID
+    name,
+    content,
+    folderId,
+    orderIndex,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 // ========================================
 // Default Export
 // ========================================
@@ -332,11 +366,18 @@ export default {
   createObjective,
   createPriority,
   createStep,
+  createNote,
   // Folder operations
   loadAllFolders,
   createFolder,
   updateFolder,
   deleteFolder,
   moveObjectiveToFolder,
-  subscribeToFolderChanges
+  subscribeToFolderChanges,
+  // Note operations
+  loadAllNotes,
+  saveNote,
+  deleteNote,
+  updateNoteOrder,
+  subscribeToNoteChanges
 };

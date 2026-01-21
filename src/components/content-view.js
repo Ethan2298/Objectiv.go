@@ -20,11 +20,13 @@ import { setupInlineEdit } from '../utils/inline-edit.js';
 let _startAddPriority = () => {};
 let _startLogStep = () => {};
 let _refreshClarity = () => {};
+let _renderSideList = () => {};
 
-export function setCallbacks({ startAddPriority, startLogStep, refreshClarity }) {
+export function setCallbacks({ startAddPriority, startLogStep, refreshClarity, renderSideList }) {
   if (startAddPriority) _startAddPriority = startAddPriority;
   if (startLogStep) _startLogStep = startLogStep;
   if (refreshClarity) _refreshClarity = refreshClarity;
+  if (renderSideList) _renderSideList = renderSideList;
 }
 
 // ========================================
@@ -166,6 +168,8 @@ export function renderContentView(options = {}) {
       renderFolderViewInContainer(container);
     } else if (viewMode === 'settings') {
       renderSettingsViewInContainer(container);
+    } else if (viewMode === 'note') {
+      renderNoteViewInContainer(container);
     } else {
       renderObjectiveViewInContainer(container);
     }
@@ -618,6 +622,115 @@ export function renderFolderView() {
 }
 
 /**
+ * Render note view into a container
+ * @param {HTMLElement} container - The container to render into
+ */
+async function renderNoteViewInContainer(container) {
+  const SideListState = window.Objectiv?.SideListState;
+  const selectedItem = SideListState?.getSelectedItem();
+  const note = selectedItem?.data;
+
+  const contentPage = document.getElementById('content-page');
+  const headerTitle = document.getElementById('content-header-title');
+  const headerDesc = document.getElementById('content-header-description');
+  const app = document.getElementById('app');
+
+  if (!headerTitle) return;
+
+  // Remove web-mode if present
+  if (contentPage) contentPage.classList.remove('web-mode');
+  if (app) app.classList.remove('web-mode');
+
+  if (!note) {
+    headerTitle.textContent = 'Select a note';
+    headerTitle.setAttribute('contenteditable', 'false');
+    if (headerDesc) {
+      headerDesc.textContent = '';
+      headerDesc.setAttribute('contenteditable', 'false');
+    }
+    container.innerHTML = '';
+    return;
+  }
+
+  // Set header
+  headerTitle.textContent = note.name || 'Untitled Note';
+  headerTitle.setAttribute('contenteditable', 'true');
+
+  if (headerDesc) {
+    headerDesc.textContent = '';
+    headerDesc.setAttribute('contenteditable', 'false');
+  }
+
+  // Setup inline editing on title
+  setupInlineEdit(headerTitle, {
+    onSave: async (newValue) => {
+      note.name = newValue;
+      const NoteStorage = window.Objectiv?.NoteStorage;
+      if (NoteStorage?.saveNote) {
+        await NoteStorage.saveNote(note);
+      }
+      _renderSideList();
+    },
+    restoreOnEmpty: true
+  });
+
+  // Clear container and render tiptap editor
+  container.innerHTML = '';
+
+  const editorContainer = document.createElement('div');
+  editorContainer.className = 'note-editor-container';
+  container.appendChild(editorContainer);
+
+  // Initialize tiptap editor for note content
+  const TiptapEditor = window.Objectiv?.TiptapEditor;
+  if (TiptapEditor?.initNoteEditor) {
+    await TiptapEditor.initNoteEditor(
+      note.content || '',
+      note.id,
+      editorContainer,
+      async (html) => {
+        // Auto-save callback
+        note.content = html;
+        note.updatedAt = new Date().toISOString();
+        const NoteStorage = window.Objectiv?.NoteStorage;
+        if (NoteStorage?.saveNote) {
+          await NoteStorage.saveNote(note);
+        }
+      }
+    );
+  } else {
+    // Fallback if tiptap is not ready
+    editorContainer.innerHTML = `
+      <div class="note-fallback-editor">
+        <textarea class="note-content-textarea" placeholder="Write your note...">${note.content || ''}</textarea>
+      </div>
+    `;
+
+    const textarea = editorContainer.querySelector('.note-content-textarea');
+    if (textarea) {
+      textarea.addEventListener('blur', async () => {
+        note.content = textarea.value;
+        note.updatedAt = new Date().toISOString();
+        const NoteStorage = window.Objectiv?.NoteStorage;
+        if (NoteStorage?.saveNote) {
+          await NoteStorage.saveNote(note);
+        }
+      });
+    }
+  }
+}
+
+/**
+ * Render note view (backward compatibility wrapper)
+ */
+export function renderNoteView() {
+  const activeTabId = TabState.getActiveTabId();
+  const container = TabContentManager.getOrCreateContainer(activeTabId);
+  renderNoteViewInContainer(container);
+  TabContentManager.setContainerViewMode(activeTabId, 'note');
+}
+
+/**
  * Render settings view into a container
  * @param {HTMLElement} container - The container to render into
  */
@@ -929,6 +1042,7 @@ export default {
   renderObjectiveView,
   renderWebView,
   renderFolderView,
+  renderNoteView,
   renderSettingsView,
   renderContentPriorities,
   renderContentSteps,
