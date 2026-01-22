@@ -1,10 +1,10 @@
 /* ========================================
-   Objectiv - Main Stylesheet
+   Layer - Main Stylesheet
    ======================================== */
 
 :root {
-  --bg: #1a1919;
-  --bg-subtle: #212020;
+  --bg: #1A1A1A;
+  --bg-subtle: #252525;
   --bg-hover: rgba(255, 255, 255, 0.1);
   --text: #e0e0e0;
   --text-muted: #888;
@@ -323,7 +323,8 @@ body.platform-darwin.fullscreen #header {
 .side-item {
   display: flex;
   align-items: center;
-  padding: 2px 8px 2px 16px;
+  padding: 6px 8px 6px 16px;
+  min-height: 32px;
   cursor: pointer;
   color: var(--text-muted);
   position: relative;
@@ -382,17 +383,6 @@ body.solarized-mode .side-item.selected {
   font-style: italic;
 }
 
-.side-item-indicator {
-  display: none;
-}
-
-.side-item.selected .side-item-indicator {
-  display: inline;
-  color: var(--accent);
-  margin-left: 8px;
-  font-size: 6px;
-  vertical-align: middle;
-}
 
 .side-item.selected::after {
   content: '';
@@ -1045,12 +1035,13 @@ body.solarized-mode .web-search-dropdown {
 }
 
 .tab-icon {
+  position: absolute;
+  left: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 14px;
   height: 14px;
-  margin-right: 6px;
   flex-shrink: 0;
 }
 
@@ -1321,36 +1312,179 @@ body.solarized-mode .tab-add:hover {
    Home View
    ======================================== */
 .home-view {
-  padding: 24px;
+  padding: 0;
 }
 
-.home-stats {
-  display: flex;
-  gap: 24px;
+.folder-view {
+  padding: 0;
 }
 
-.home-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px 24px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* ========================================
+   Directory Listing
+   Uses same styling as side-list for consistency
+   ======================================== */
+.directory-listing {
+  padding: 0;
 }
 
-.home-stat-value {
-  font-size: 32px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.home-stat-label {
-  font-size: 12px;
+.directory-empty {
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 4px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* Directory items - like side-item but with more breathing room for content area */
+.directory-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 16px;
+  cursor: pointer;
+  color: var(--text-muted);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.directory-item:hover {
+  background: var(--bg-hover);
+}
+
+/* Depth-based indentation - matches side-item depth pattern */
+.directory-item[data-depth="1"] { padding-left: 34px; }
+.directory-item[data-depth="2"] { padding-left: 42px; }
+.directory-item[data-depth="3"] { padding-left: 50px; }
+.directory-item[data-depth="4"] { padding-left: 58px; }
+.directory-item[data-depth="5"] { padding-left: 66px; }
+
+/* Indent guide lines */
+.directory-item[data-depth="1"]::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.directory-item[data-depth="2"]::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  box-shadow: 8px 0 0 var(--border);
+}
+
+.directory-item[data-depth="3"]::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  box-shadow: 8px 0 0 var(--border), 16px 0 0 var(--border);
+}
+
+.directory-item[data-depth="4"]::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  box-shadow: 8px 0 0 var(--border), 16px 0 0 var(--border), 24px 0 0 var(--border);
+}
+
+/* Remove indent spacer - use padding instead */
+.dir-indent {
+  display: none;
+}
+
+/* Folder toggle chevron - matches sidebar */
+.dir-toggle {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+/* On row hover, toggle gets original bg to create a "hole" through the hover highlight */
+.directory-item:hover .dir-toggle {
+  background: var(--bg);
+}
+
+/* Toggle's own hover state */
+.directory-item:hover .dir-toggle:hover {
+  background: var(--bg-subtle);
+}
+
+.dir-toggle-spacer {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.dir-chevron {
+  width: 12px;
+  height: 12px;
+}
+
+/* Icons - slightly larger than sidebar for better readability */
+.dir-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-right: 8px;
+  stroke: var(--text-muted);
+}
+
+.dir-icon-folder {
+  stroke: var(--text-muted);
+}
+
+.dir-icon-objective {
+  stroke: var(--text-muted);
+}
+
+.dir-icon-note {
+  stroke: var(--text-muted);
+}
+
+.dir-icon-bookmark {
+  stroke: var(--text-muted);
+}
+
+/* Name - matches .side-item-name */
+.dir-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Item count badge for folders */
+.dir-count {
+  flex-shrink: 0;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 /* ========================================
@@ -2531,9 +2665,6 @@ body.solarized-mode .excel-table tbody tr:hover td {
     font-weight: inherit;
     color: inherit;
   }
-  .side-item-indicator {
-    display: none !important;
-  }
 
   /* Touch-friendly targets (48px min) */
   .side-item {
@@ -2838,17 +2969,28 @@ body.solarized-mode .side-item.folder-row.selected {
 
 /* Drag and Drop States */
 .side-item.dragging {
-  opacity: 0.5;
+  opacity: 0.4;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Disable normal hover effects during drag, except for folder drop target */
+#side-list-items.is-dragging .side-item:not(.folder-drop-hover):hover {
+  background: transparent;
+}
+
+#side-list-items.is-dragging .side-item .item-actions {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .side-item.drag-over {
-  background: rgba(8, 145, 178, 0.15);
-  border-top: 2px solid var(--accent);
+  background: var(--bg-hover);
 }
 
 .side-item.folder-row.drag-over {
-  background: rgba(8, 145, 178, 0.25);
-  outline: 1px solid var(--accent);
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* Drop zone for unfiled area */
@@ -2898,8 +3040,67 @@ body.solarized-mode .side-item.folder-row.selected {
 
 /* Folder hover feedback during drag */
 .side-item.drag-over-folder {
-  background: rgba(8, 145, 178, 0.25);
-  outline: 1px solid var(--accent);
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* jQuery UI Sortable styles */
+.sortable-placeholder {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent;
+  pointer-events: none;
+  position: relative;
+}
+
+.sortable-placeholder::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.sortable-enabled {
+  cursor: grab;
+  touch-action: none; /* Prevent scroll interference on touch */
+}
+
+.sortable-enabled:active {
+  cursor: grabbing;
+}
+
+/* jQuery UI helper (the element being dragged) */
+.ui-sortable-helper {
+  z-index: 1000 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: var(--bg-surface, #1a1a1a);
+  border-radius: 4px;
+}
+
+body.light-mode .ui-sortable-helper {
+  background: var(--bg-surface, #fff);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.side-item.folder-drop-hover {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.side-item.drop-invalid {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.drag-hidden {
+  display: none !important;
 }
 
 
@@ -3374,43 +3575,62 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   height: 100%;
 }
 
-/* Note toolbar - simplified (no save/cancel) */
-.note-toolbar {
+/* Note toolbar row - below global nav, only visible for notes */
+.note-toolbar-row {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  flex-shrink: 0;
+}
+
+/* Show toolbar when note mode is active */
+#content-view.note-mode .note-toolbar-row {
   display: flex;
-  gap: 4px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
-  flex-wrap: wrap;
 }
 
-.note-toolbar button {
-  background: transparent;
-  border: 1px solid transparent;
+.note-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Subtle separator between groups */
+.note-toolbar-group:not(:last-child)::after {
+  content: '';
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 6px;
+  opacity: 0.4;
+}
+
+.note-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
   border-radius: 4px;
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--text-dim);
   cursor: pointer;
-  padding: 6px 10px;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
 }
 
-.note-toolbar button:hover {
+.note-toolbar-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.note-toolbar button.is-active {
+.note-toolbar-btn.is-active {
   background: var(--bg-hover);
   color: var(--accent);
-  border-color: var(--accent);
-}
-
-.note-toolbar .separator {
-  width: 1px;
-  background: var(--border);
-  margin: 0 4px;
 }
 
 /* Note editor container fills available space */
@@ -3457,6 +3677,26 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* Note editor lists */
+.note-editor-wrapper .ProseMirror ul,
+.note-editor-wrapper .ProseMirror ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.note-editor-wrapper .ProseMirror li {
+  margin: 4px 0;
+}
+
+/* Nested lists - consistent indentation per level */
+.note-editor-wrapper .ProseMirror ul ul,
+.note-editor-wrapper .ProseMirror ol ol,
+.note-editor-wrapper .ProseMirror ul ol,
+.note-editor-wrapper .ProseMirror ol ul {
+  margin: 4px 0;
+  padding-left: 24px;
 }
 
 /* Fallback textarea for notes */

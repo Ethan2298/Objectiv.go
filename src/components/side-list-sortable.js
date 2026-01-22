@@ -1,11 +1,12 @@
 /**
  * Side List Sortable - jQuery UI Sortable integration for drag-drop
  *
- * Uses tree data model for hierarchical drag-drop operations.
- * Nested sortable containers with connectWith for cross-container dragging.
+ * Uses flat folderId + orderIndex model for positioning.
+ * On drop: determine target folder from neighbors, renumber all siblings.
  *
- * Folder-into-folder drops are handled via hover detection during sortable drag,
- * NOT via jQuery UI Droppable (which conflicts with Sortable).
+ * Drop zones:
+ * - Top/bottom 25% of folder row = reorder (drop above/below)
+ * - Center 50% of folder row = drop INTO folder
  */
 
 import AppState from '../state/app-state.js';
@@ -24,21 +25,27 @@ const SORTABLE_OPTIONS = {
   items: '> .side-item[data-sortable="true"]',
   placeholder: 'sortable-placeholder',
   tolerance: 'pointer',
-  revert: 100,
-  scrollSensitivity: 40,
-  scrollSpeed: 20,
+  revert: false,
+  scrollSensitivity: 60,  // Start scrolling sooner when near edge
+  scrollSpeed: 25,
   cursor: 'grabbing',
-  opacity: 0.9,
   zIndex: 1000,
-  delay: 50,
-  distance: 5,
-  connectWith: '.sortable-container', // Allow dragging between containers
+  delay: 0,              // No delay - immediate drag response
+  distance: 4,           // Minimal distance to prevent accidental drags
+  connectWith: '.sortable-container',
+  cursorAt: { top: 20, left: 20 }, // Offset helper from cursor for better visibility
   helper: function(e, item) {
     // For folders, hide children before creating helper
     if (item.hasClass('folder-row')) {
       item.next('.folder-children').addClass('drag-hidden');
     }
-    return item; // Use original element as helper
+    // Use clone so original stays in place and doesn't interfere with drop detection
+    const $clone = item.clone();
+    $clone.css({
+      width: item.outerWidth(),
+      height: item.outerHeight()
+    });
+    return $clone;
   }
 };
 
@@ -64,6 +71,12 @@ export function initSortable() {
   // Initialize on main container
   const $mainContainer = $('#side-list-items');
   if (!$mainContainer.length) return;
+
+  // Check if jQuery UI is loaded
+  if (!$.fn.sortable) {
+    console.error('jQuery UI Sortable not loaded!');
+    return;
+  }
 
   // Destroy all existing sortables first
   destroySortable();
@@ -95,9 +108,8 @@ function initSortableContainer($container, parentId) {
     start: handleDragStart,
     change: handleDragChange,
     stop: handleDragStop,
-    receive: handleReceive, // Fired when item moves between containers
-    over: handleDragOver,
-    out: handleDragOut
+    sort: handleSort, // Fires continuously during drag - used for folder hover detection
+    receive: handleReceive
   });
 
   // Store parent ID on container for later reference
@@ -105,36 +117,61 @@ function initSortableContainer($container, parentId) {
 }
 
 /**
- * Initialize folder hover detection for dropping items INTO folders
- * Uses mouse events instead of jQuery UI Droppable (which conflicts with Sortable)
+ * Initialize folder droppables for dropping items INTO folders
+ * Uses jQuery UI Droppable with hoverClass for visual feedback
  */
 function initFolderDroppables() {
   $('.side-item.folder-row').each(function() {
     const $folder = $(this);
     const folderId = $folder.data('folderId');
 
-    // Use mouseenter/mouseleave for hover detection during drag
-    $folder.off('mouseenter.folderdrop mouseleave.folderdrop');
+    // Skip if already a droppable
+    if ($folder.data('ui-droppable')) {
+      $folder.droppable('destroy');
+    }
 
-    $folder.on('mouseenter.folderdrop', function(e) {
-      // Only handle if we're dragging something
-      if (!_draggedItemId) return;
+    $folder.droppable({
+      accept: '.side-item[data-sortable="true"]',
+      tolerance: 'pointer',
+      greedy: true, // Prevents event bubbling to parent droppables
 
-      // Check if this is a valid drop target
-      if (!isValidDropTarget(folderId)) {
-        return;
+      over: function(e, ui) {
+        // Check if cursor is in center zone (middle 50%) of folder
+        // Top/bottom 25% reserved for reordering between items
+        const folderRect = $folder[0].getBoundingClientRect();
+        const cursorY = e.pageY - window.scrollY;
+        const relativeY = cursorY - folderRect.top;
+        const threshold = folderRect.height * 0.25;
+
+        const inCenterZone = relativeY > threshold && relativeY < (folderRect.height - threshold);
+
+        if (!inCenterZone || !isValidDropTarget(folderId)) {
+          $folder.removeClass('folder-drop-hover');
+          _hoverTargetFolderId = null;
+          $('#side-list-items, .sortable-container').find('.sortable-placeholder').show();
+          return;
+        }
+
+        $folder.addClass('folder-drop-hover');
+        _hoverTargetFolderId = folderId;
+
+        // Hide sortable placeholder when over center of a folder
+        $('#side-list-items, .sortable-container').find('.sortable-placeholder').hide();
+      },
+
+      out: function(e, ui) {
+        $folder.removeClass('folder-drop-hover');
+        if (_hoverTargetFolderId === folderId) {
+          _hoverTargetFolderId = null;
+        }
+        // Show sortable placeholder again
+        $('#side-list-items, .sortable-container').find('.sortable-placeholder').show();
+      },
+
+      drop: function(e, ui) {
+        // Drop is handled by sortable's stop event using _hoverTargetFolderId
+        // This just provides the visual feedback
       }
-
-      // Set as hover target and show visual feedback
-      _hoverTargetFolderId = folderId;
-      $folder.addClass('folder-drop-hover');
-    });
-
-    $folder.on('mouseleave.folderdrop', function(e) {
-      if (_hoverTargetFolderId === folderId) {
-        _hoverTargetFolderId = null;
-      }
-      $folder.removeClass('folder-drop-hover');
     });
   });
 }
@@ -174,17 +211,18 @@ function handleDragStart(e, ui) {
   _hoverTargetFolderId = null;
 
   // Store drag state in AppState
+  const $parentContainer = $item.closest('.sortable-container').length
+    ? $item.closest('.sortable-container')
+    : $item.closest('#side-list-items');
   AppState.setDraggedItem({
     type,
     id,
-    originalParentId: $item.closest('.sortable-container').data('parentFolderId') || null
+    originalParentId: $parentContainer.data('parentFolderId') || null
   });
 
   // Visual feedback
   $item.addClass('dragging');
-
-  // Add placeholder sizing based on item height
-  ui.placeholder.height($item.outerHeight());
+  $('#side-list-items').addClass('is-dragging');
 
   // Mark invalid drop targets when dragging a folder
   if (type === 'folder') {
@@ -219,16 +257,59 @@ function markInvalidDropTargets(draggedFolderId) {
   });
 }
 
-function handleDragOver(e, ui) {
-  const $target = $(e.target);
-  if ($target.hasClass('folder-row')) {
-    $target.addClass('folder-drop-hover');
-  }
-}
+/**
+ * Handle sort event - fires continuously during drag
+ * Checks cursor position to determine folder drop vs reorder
+ */
+function handleSort(e, ui) {
+  const cursorY = e.pageY;
 
-function handleDragOut(e, ui) {
-  const $target = $(e.target);
-  $target.removeClass('folder-drop-hover');
+  // Check all folders to see if cursor is in their center zone
+  let foundFolderDrop = false;
+
+  $('.side-item.folder-row').each(function() {
+    const $folder = $(this);
+    const folderId = $folder.data('folderId');
+    const folderRect = this.getBoundingClientRect();
+
+    // Check if cursor is horizontally within folder
+    const cursorX = e.pageX;
+    if (cursorX < folderRect.left || cursorX > folderRect.right) {
+      $folder.removeClass('folder-drop-hover');
+      return true; // continue
+    }
+
+    // Check if cursor is vertically within folder
+    const folderTop = folderRect.top + window.scrollY;
+    const folderBottom = folderTop + folderRect.height;
+
+    if (cursorY < folderTop || cursorY > folderBottom) {
+      $folder.removeClass('folder-drop-hover');
+      return true; // continue
+    }
+
+    // Cursor is over this folder - check if in center zone (middle 50%)
+    const relativeY = cursorY - folderTop;
+    const threshold = folderRect.height * 0.25;
+    const inCenterZone = relativeY > threshold && relativeY < (folderRect.height - threshold);
+
+    if (inCenterZone && isValidDropTarget(folderId)) {
+      $folder.addClass('folder-drop-hover');
+      _hoverTargetFolderId = folderId;
+      foundFolderDrop = true;
+      // Hide placeholder when dropping into folder
+      $('.sortable-placeholder').hide();
+      return false; // break
+    } else {
+      $folder.removeClass('folder-drop-hover');
+    }
+  });
+
+  // If not over any folder center zone, clear hover state and show placeholder
+  if (!foundFolderDrop) {
+    _hoverTargetFolderId = null;
+    $('.sortable-placeholder').show();
+  }
 }
 
 /**
@@ -252,6 +333,7 @@ async function handleDragStop(e, ui) {
 
   // Clean up visual state
   $item.removeClass('dragging');
+  $('#side-list-items').removeClass('is-dragging');
   $('.folder-drop-hover').removeClass('folder-drop-hover');
   $('.drag-hidden').removeClass('drag-hidden');
   $('.drop-invalid').removeClass('drop-invalid');
@@ -269,7 +351,7 @@ async function handleDragStop(e, ui) {
     console.log('Dropping into folder:', { type, id, folderId: dropIntoFolderId });
 
     // Cancel the sortable's DOM changes - we're doing a folder drop instead
-    $('.sortable-container').each(function() {
+    $('#side-list-items, .sortable-container').each(function() {
       if ($(this).data('ui-sortable')) {
         $(this).sortable('cancel');
       }
@@ -279,78 +361,26 @@ async function handleDragStop(e, ui) {
     return;
   }
 
-  // Otherwise, handle as normal reorder
-  const $newContainer = $item.closest('.sortable-container');
-  const newParentId = $newContainer.data('parentFolderId') || null;
+  // Otherwise, handle as normal reorder using flat folderId + orderIndex model
+  const $prev = $item.prev('.side-item');
+  const $next = $item.next('.side-item');
 
-  // Get the new index among ONLY sortable items
-  const $sortableItems = $newContainer.children('.side-item[data-sortable="true"]');
-  const newIndex = $sortableItems.index($item);
+  // Determine target parent from neighbors
+  const targetParentId = getTargetParentId($prev, $next, type);
 
-  console.log('Drag stop (reorder):', { type, id, newParentId, newIndex, totalSortable: $sortableItems.length });
+  console.log('Drop reorder:', { type, id, targetParentId, prev: $prev.data('type'), next: $next.data('type') });
 
-  // Update tree and persist
-  await moveItemInTree(type, id, newParentId, newIndex);
-}
-
-// ========================================
-// Tree Operations
-// ========================================
-
-/**
- * Move an item within the tree and persist changes
- */
-async function moveItemInTree(type, id, newParentId, newIndex) {
-  try {
-    // Get current tree (make a copy to avoid mutation issues)
-    const tree = AppState.getTree();
-
-    console.log('Moving in tree:', { type, id, newParentId, newIndex });
-    console.log('Tree before move:', JSON.stringify(tree.map(t => ({ type: t.type, id: t.id, name: t.name })), null, 2));
-
-    // Move in tree
-    const success = TreeUtils.moveInTree(tree, id, type, newParentId, newIndex);
-
-    if (!success) {
-      console.error('Failed to move item in tree:', { type, id, newParentId, newIndex });
-      _renderSideList();
-      return;
-    }
-
-    console.log('Tree after move:', JSON.stringify(tree.map(t => ({ type: t.type, id: t.id, name: t.name })), null, 2));
-
-    // Update AppState with modified tree
-    AppState.setTree(tree);
-
-    // Persist to storage
-    const Repository = window.Objectiv?.Repository;
-    if (Repository?.saveTree) {
-      await Repository.saveTree(tree);
-      console.log('Tree saved to storage');
-    }
-
-    // Re-render to update UI
-    _renderSideList();
-
-  } catch (err) {
-    console.error('Sortable move failed:', err);
-    _renderSideList();
-  }
+  // Update item and renumber siblings
+  await updateItemPosition(type, id, targetParentId, $prev, $next);
 }
 
 /**
- * Handle dropping an item into a folder
+ * Handle dropping an item into a folder (center zone drop)
+ * Adds item to end of folder
  */
 async function handleDropIntoFolder(type, id, folderId) {
-  // Get current tree
-  const tree = AppState.getTree();
-
-  // Find the target folder to determine insertion index
-  const folder = TreeUtils.findFolder(tree, folderId);
-  const newIndex = folder && folder.children ? folder.children.length : 0;
-
-  // Move item to end of folder
-  await moveItemInTree(type, id, folderId, newIndex);
+  // Use the same updateItemPosition logic but with no prev/next (adds to end)
+  await updateItemPosition(type, id, folderId, $(), $());
 }
 
 // ========================================
@@ -370,6 +400,162 @@ function getItemId($item) {
     case 'note': return $item.data('noteId');
     default: return null;
   }
+}
+
+/**
+ * Get the target parent ID based on neighboring items
+ */
+function getTargetParentId($prev, $next, droppedType) {
+  // If prev is an expanded folder and next is inside it, drop INTO the folder
+  if ($prev.length && $prev.data('type') === 'folder') {
+    const prevDepth = parseInt($prev.attr('data-depth') || '0', 10);
+    const nextDepth = $next.length ? parseInt($next.attr('data-depth') || '0', 10) : -1;
+
+    // Next item is deeper = we're inside the folder
+    if (nextDepth > prevDepth) {
+      return $prev.data('folderId');
+    }
+  }
+
+  // If prev is a non-folder item, use its folder
+  if ($prev.length && $prev.data('type') !== 'folder') {
+    return $prev.data('folderId') || null;
+  }
+
+  // If next is a non-folder item, use its folder
+  if ($next.length && $next.data('type') !== 'folder') {
+    return $next.data('folderId') || null;
+  }
+
+  // Root level
+  return null;
+}
+
+/**
+ * Update item position and renumber all siblings in the target folder
+ */
+async function updateItemPosition(type, id, targetParentId, $prev, $next) {
+  const data = AppState.getData();
+  const Repository = window.Layer?.Repository;
+  const NoteStorage = window.Layer?.NoteStorage;
+  const BookmarkStorage = window.Layer?.BookmarkStorage;
+
+  // Get all siblings in the target parent (same folderId/parentId)
+  // Use copies to avoid mutating original data
+  let siblings = [];
+
+  if (type === 'folder') {
+    siblings = data.folders
+      .filter(f => (f.parentId || null) === targetParentId)
+      .map(f => ({ ...f }));
+  } else if (type === 'objective') {
+    siblings = data.objectives
+      .filter(o => (o.folderId || null) === targetParentId)
+      .map(o => ({ ...o }));
+  } else if (type === 'note') {
+    siblings = (data.notes || [])
+      .filter(n => (n.folderId || null) === targetParentId)
+      .map(n => ({ ...n }));
+  } else if (type === 'bookmark') {
+    siblings = (BookmarkStorage?.loadAllBookmarks() || [])
+      .filter(b => (b.folderId || null) === targetParentId)
+      .map(b => ({ ...b }));
+  }
+
+  // Sort by current orderIndex
+  siblings.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+  // Remove the dropped item from siblings (if it was already there)
+  siblings = siblings.filter(s => s.id !== id);
+
+  // Find the dropped item (make a copy)
+  let droppedItem;
+  if (type === 'folder') {
+    const found = data.folders.find(f => f.id === id);
+    droppedItem = found ? { ...found } : null;
+  } else if (type === 'objective') {
+    const found = data.objectives.find(o => o.id === id);
+    droppedItem = found ? { ...found } : null;
+  } else if (type === 'note') {
+    const found = (data.notes || []).find(n => n.id === id);
+    droppedItem = found ? { ...found } : null;
+  } else if (type === 'bookmark') {
+    const found = (BookmarkStorage?.loadAllBookmarks() || []).find(b => b.id === id);
+    droppedItem = found ? { ...found } : null;
+  }
+
+  if (!droppedItem) {
+    console.error('Could not find dropped item:', type, id);
+    _renderSideList();
+    return;
+  }
+
+  // Determine insert position based on prev/next
+  let insertIndex = 0;
+
+  if ($prev.length) {
+    const prevId = getItemId($prev);
+    const prevType = $prev.data('type');
+
+    // Find prev item in siblings
+    if (prevType === type) {
+      const prevIndex = siblings.findIndex(s => s.id === prevId);
+      if (prevIndex !== -1) {
+        insertIndex = prevIndex + 1;
+      }
+    } else if (prevType === 'folder' && type !== 'folder') {
+      // Dropping after a folder row - insert at beginning of folder contents
+      insertIndex = 0;
+    }
+  }
+
+  // Insert dropped item at position
+  siblings.splice(insertIndex, 0, droppedItem);
+
+  // Renumber all siblings and set parent
+  const updates = siblings.map((item, index) => ({
+    id: item.id,
+    orderIndex: index * 1000,
+    parentId: type === 'folder' ? targetParentId : undefined,
+    folderId: type !== 'folder' ? targetParentId : undefined
+  }));
+
+  console.log('Saving updates:', updates);
+
+  // Save to database first, then reload fresh data
+  try {
+    if (type === 'folder' && Repository?.updateFolder) {
+      for (const update of updates) {
+        await Repository.updateFolder({ id: update.id, orderIndex: update.orderIndex, parentId: update.parentId });
+      }
+    } else if (type === 'objective' && Repository?.updateObjectiveOrder) {
+      for (const update of updates) {
+        await Repository.updateObjectiveOrder(update.id, update.orderIndex, update.folderId);
+      }
+    } else if (type === 'note' && NoteStorage?.updateNoteOrder) {
+      for (const update of updates) {
+        await NoteStorage.updateNoteOrder(update.id, update.orderIndex, update.folderId);
+      }
+    } else if (type === 'bookmark' && BookmarkStorage?.updateBookmarkOrder) {
+      for (const update of updates) {
+        BookmarkStorage.updateBookmarkOrder(update.id, update.orderIndex, update.folderId);
+      }
+    }
+
+    // Reload fresh data from database
+    if (Repository?.reloadData) {
+      const reloadedData = await Repository.reloadData();
+      if (reloadedData) {
+        AppState.setObjectives(reloadedData.objectives);
+        AppState.setFolders(reloadedData.folders);
+        if (reloadedData.notes) AppState.setNotes(reloadedData.notes);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save position updates:', err);
+  }
+
+  _renderSideList();
 }
 
 // ========================================
