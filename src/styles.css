@@ -2824,6 +2824,13 @@ body.solarized-mode .side-item.folder-row.selected {
   color: #073642;
 }
 
+/* Nested folders - chevron aligns with sibling item icons */
+/* 18px increment per depth: 16 + (18 * depth) */
+.side-item.folder-row[data-depth="1"] { padding-left: 34px; }
+.side-item.folder-row[data-depth="2"] { padding-left: 52px; }
+.side-item.folder-row[data-depth="3"] { padding-left: 70px; }
+.side-item.folder-row[data-depth="4"] { padding-left: 88px; }
+
 /* Objective row - icon included in HTML, align with Home/Web */
 .side-item[data-type="objective"] {
   padding-left: 16px;
@@ -2833,9 +2840,9 @@ body.solarized-mode .side-item.folder-row.selected {
 /* Guides at: depth1=26px, depth2=34px, depth3=42px, depth4=50px */
 /* Icon starts 8px after the rightmost guide */
 .side-item[data-type="objective"][data-depth="1"] { padding-left: 34px; }
-.side-item[data-type="objective"][data-depth="2"] { padding-left: 42px; }
-.side-item[data-type="objective"][data-depth="3"] { padding-left: 50px; }
-.side-item[data-type="objective"][data-depth="4"] { padding-left: 58px; }
+.side-item[data-type="objective"][data-depth="2"] { padding-left: 52px; }
+.side-item[data-type="objective"][data-depth="3"] { padding-left: 70px; }
+.side-item[data-type="objective"][data-depth="4"] { padding-left: 88px; }
 
 /* Bookmark row - same indentation as objectives */
 .side-item[data-type="bookmark"] {
@@ -2843,13 +2850,15 @@ body.solarized-mode .side-item.folder-row.selected {
 }
 
 .side-item[data-type="bookmark"][data-depth="1"] { padding-left: 34px; }
-.side-item[data-type="bookmark"][data-depth="2"] { padding-left: 42px; }
-.side-item[data-type="bookmark"][data-depth="3"] { padding-left: 50px; }
-.side-item[data-type="bookmark"][data-depth="4"] { padding-left: 58px; }
+.side-item[data-type="bookmark"][data-depth="2"] { padding-left: 52px; }
+.side-item[data-type="bookmark"][data-depth="3"] { padding-left: 70px; }
+.side-item[data-type="bookmark"][data-depth="4"] { padding-left: 88px; }
 
-/* Indent guide lines - centered under parent chevron */
-/* Chevron center = padding-left + (toggle-width / 2) = 16px + 10px = 26px */
-/* Each depth adds 8px of padding, so guides at 26px, 34px, 42px, 50px */
+/* Indent guide lines - centered under parent folder chevrons */
+/* Depth 0 chevron center: 16px + 10px = 26px */
+/* Depth 1 chevron center: 34px + 10px = 44px */
+/* Depth 2 chevron center: 52px + 10px = 62px */
+/* Depth 3 chevron center: 70px + 10px = 80px */
 .side-item[data-depth="1"]::before {
   content: '';
   position: absolute;
@@ -2868,7 +2877,7 @@ body.solarized-mode .side-item.folder-row.selected {
   bottom: 0;
   width: 1px;
   background: var(--border);
-  box-shadow: 8px 0 0 var(--border);
+  box-shadow: 18px 0 0 var(--border);
 }
 
 .side-item[data-depth="3"]::before {
@@ -2879,7 +2888,7 @@ body.solarized-mode .side-item.folder-row.selected {
   bottom: 0;
   width: 1px;
   background: var(--border);
-  box-shadow: 8px 0 0 var(--border), 16px 0 0 var(--border);
+  box-shadow: 18px 0 0 var(--border), 36px 0 0 var(--border);
 }
 
 .side-item[data-depth="4"]::before {
@@ -2890,7 +2899,7 @@ body.solarized-mode .side-item.folder-row.selected {
   bottom: 0;
   width: 1px;
   background: var(--border);
-  box-shadow: 8px 0 0 var(--border), 16px 0 0 var(--border), 24px 0 0 var(--border);
+  box-shadow: 18px 0 0 var(--border), 36px 0 0 var(--border), 54px 0 0 var(--border);
 }
 
 /* Folder chevron */
@@ -3551,9 +3560,9 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
 }
 
 .side-item[data-type="note"][data-depth="1"] { padding-left: 34px; }
-.side-item[data-type="note"][data-depth="2"] { padding-left: 42px; }
-.side-item[data-type="note"][data-depth="3"] { padding-left: 50px; }
-.side-item[data-type="note"][data-depth="4"] { padding-left: 58px; }
+.side-item[data-type="note"][data-depth="2"] { padding-left: 52px; }
+.side-item[data-type="note"][data-depth="3"] { padding-left: 70px; }
+.side-item[data-type="note"][data-depth="4"] { padding-left: 88px; }
 
 /* ========================================
    Note Editor Styles
@@ -3745,4 +3754,35 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   color: var(--text-dim);
   font-style: italic;
   padding: 12px 0;
+}
+
+/* ========================================
+   Toast Notifications
+   ======================================== */
+
+.error-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ef4444;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.error-toast.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.error-toast.success {
+  background: #22c55e;
 }

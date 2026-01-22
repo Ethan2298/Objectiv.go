@@ -1,5 +1,5 @@
 /**
- * Objectiv - Main Application Entry Point
+ * Layer - Main Application Entry Point
  *
  * This module serves as the central entry point, importing and
  * re-exporting all modules for use by the application.
@@ -12,10 +12,12 @@
 import * as Repository from './data/repository.js';
 import * as BookmarkStorage from './data/bookmark-storage.js';
 import * as NoteStorage from './data/note-storage.js';
+import * as TreeUtils from './data/tree-utils.js';
 import * as TabState from './state/tab-state.js';
 import * as TabContentManager from './state/tab-content-manager.js';
 import * as SideListState from './state/side-list-state.js';
 import * as AppState from './state/app-state.js';
+import * as OptimisticState from './state/optimistic-state.js';
 
 // ========================================
 // Module Imports - Utils
@@ -57,6 +59,8 @@ import * as ContentView from './components/content-view.js';
 import * as NextStepTimer from './components/next-step-timer.js';
 import * as GlobalNav from './components/global-nav.js';
 import * as TiptapEditor from './components/tiptap-editor.js';
+import * as DirectoryListing from './components/directory-listing.js';
+import * as Toast from './components/toast.js';
 
 // ========================================
 // Global Window Reference
@@ -64,15 +68,17 @@ import * as TiptapEditor from './components/tiptap-editor.js';
 
 // Make modules available globally for gradual migration
 // and for access from inline scripts during transition
-window.Objectiv = {
+window.Layer = {
   // Data & State
   Repository,
   BookmarkStorage,
   NoteStorage,
+  TreeUtils,
   TabState,
   TabContentManager,
   SideListState,
   AppState,
+  OptimisticState,
 
   // Utils
   Utils,
@@ -101,6 +107,8 @@ window.Objectiv = {
   NextStepTimer,
   GlobalNav,
   TiptapEditor,
+  DirectoryListing,
+  Toast,
   Tabs
 };
 
@@ -228,14 +236,14 @@ function updateTabTitleFromSelection() {
     return;
   }
 
-  let title = 'Objectiv';
+  let title = 'Layer';
   let icon = 'home';
   let windowTitle = null;
 
   if (selection.type === 'home') {
     title = 'Home';
     icon = 'home';
-    windowTitle = null; // Will show just "Objectiv"
+    windowTitle = null; // Will show just "Layer"
   } else if (selection.type === 'settings') {
     title = 'Settings';
     icon = 'settings';
@@ -268,7 +276,7 @@ function updateTabTitleFromSelection() {
     }
     icon = 'note';
   } else if (viewMode === 'empty' || !selection.id) {
-    title = 'Objectiv';
+    title = 'Layer';
     icon = 'home';
     windowTitle = null;
   }
@@ -348,6 +356,11 @@ async function initStorage() {
       AppState.setNotes(notes);
     }
 
+    // Build tree from flat data (includes bookmarks from localStorage)
+    const bookmarks = BookmarkStorage.loadAllBookmarks?.() || [];
+    AppState.rebuildTree(bookmarks);
+    console.log('Built tree with', AppState.getTree().length, 'root items');
+
     updateView();
     Platform.updateStatusReporter();
 
@@ -358,6 +371,8 @@ async function initStorage() {
         const reloadedData = await Repository.reloadData();
         if (reloadedData && reloadedData.objectives) {
           AppState.setObjectives(reloadedData.objectives);
+          const bm = BookmarkStorage.loadAllBookmarks?.() || [];
+          AppState.rebuildTree(bm);
           updateView();
         }
       });
@@ -370,6 +385,8 @@ async function initStorage() {
         console.log('Folder realtime update received, refreshing...');
         const folders = await Repository.loadAllFolders();
         AppState.setFolders(folders);
+        const bm = BookmarkStorage.loadAllBookmarks?.() || [];
+        AppState.rebuildTree(bm);
         updateView();
       });
       console.log('Subscribed to folder realtime updates');
@@ -378,9 +395,18 @@ async function initStorage() {
     // Subscribe to note changes
     if (NoteStorage.subscribeToNoteChanges) {
       NoteStorage.subscribeToNoteChanges(async (payload) => {
+        // Skip refreshing for notes we just saved locally (avoid editing loop)
+        const noteId = payload.new?.id || payload.old?.id;
+        if (noteId && NoteStorage.wasRecentlySavedLocally?.(noteId)) {
+          console.log('Note realtime update received but skipping (local save):', noteId);
+          return;
+        }
+
         console.log('Note realtime update received, refreshing...');
         const notes = await NoteStorage.loadAllNotes();
         AppState.setNotes(notes);
+        const bm = BookmarkStorage.loadAllBookmarks?.() || [];
+        AppState.rebuildTree(bm);
         updateView();
       });
       console.log('Subscribed to note realtime updates');
@@ -598,7 +624,7 @@ function applyInitialRoute() {
  * Initialize the application
  */
 export async function init() {
-  console.log('Objectiv modules loaded');
+  console.log('Layer modules loaded');
 
   // Set platform class for CSS (e.g., traffic light padding on macOS)
   if (window.electronAPI?.platform) {
@@ -660,6 +686,9 @@ export async function init() {
 
   // Initialize event handlers
   initEventHandlers();
+
+  // Initialize note toolbar
+  ContentView.initNoteToolbar();
 
   // Initial render - check if TabState has a saved selection
   const selection = TabState.getSelection();
@@ -723,6 +752,7 @@ export {
   SideList,
   ContentView,
   NextStepTimer,
+  DirectoryListing,
 
   // Core functions
   saveData,

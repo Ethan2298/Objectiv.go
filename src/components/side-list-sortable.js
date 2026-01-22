@@ -7,10 +7,15 @@
  * Drop zones:
  * - Top/bottom 25% of folder row = reorder (drop above/below)
  * - Center 50% of folder row = drop INTO folder
+ *
+ * Uses optimistic updates: UI updates immediately, persistence happens
+ * in background. On failure, state is rolled back and error toast shown.
  */
 
 import AppState from '../state/app-state.js';
 import * as TreeUtils from '../data/tree-utils.js';
+import * as OptimisticState from '../state/optimistic-state.js';
+import { showErrorToast } from './toast.js';
 
 // ========================================
 // Configuration
@@ -433,129 +438,218 @@ function getTargetParentId($prev, $next, droppedType) {
 
 /**
  * Update item position and renumber all siblings in the target folder
+ * Uses optimistic updates: UI updates immediately, persistence is async
  */
-async function updateItemPosition(type, id, targetParentId, $prev, $next) {
-  const data = AppState.getData();
+function updateItemPosition(type, id, targetParentId, $prev, $next) {
   const Repository = window.Layer?.Repository;
   const NoteStorage = window.Layer?.NoteStorage;
   const BookmarkStorage = window.Layer?.BookmarkStorage;
 
-  // Get all siblings in the target parent (same folderId/parentId)
-  // Use copies to avoid mutating original data
-  let siblings = [];
+  // Capture scroll position for restoration
+  const $container = $('#side-list-items');
+  const scrollTop = $container.length ? $container[0].scrollTop : 0;
 
-  if (type === 'folder') {
-    siblings = data.folders
-      .filter(f => (f.parentId || null) === targetParentId)
-      .map(f => ({ ...f }));
-  } else if (type === 'objective') {
-    siblings = data.objectives
-      .filter(o => (o.folderId || null) === targetParentId)
-      .map(o => ({ ...o }));
-  } else if (type === 'note') {
-    siblings = (data.notes || [])
-      .filter(n => (n.folderId || null) === targetParentId)
-      .map(n => ({ ...n }));
-  } else if (type === 'bookmark') {
-    siblings = (BookmarkStorage?.loadAllBookmarks() || [])
-      .filter(b => (b.folderId || null) === targetParentId)
-      .map(b => ({ ...b }));
+  // Build updates array before mutation (needed for both local and persist)
+  const updates = buildUpdatesArray(type, id, targetParentId, $prev, $next);
+
+  if (!updates) {
+    console.error('Could not build updates for:', type, id);
+    _renderSideList();
+    restoreScroll(scrollTop);
+    return;
   }
 
-  // Sort by current orderIndex
-  siblings.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+  console.log('Saving updates:', updates);
 
-  // Remove the dropped item from siblings (if it was already there)
-  siblings = siblings.filter(s => s.id !== id);
+  // Optimistic update: local first, persist async
+  OptimisticState.optimisticUpdate(
+    // Local mutation (synchronous)
+    () => {
+      applyUpdatesLocally(type, updates);
+      AppState.rebuildTree(BookmarkStorage?.loadAllBookmarks?.() || []);
+      _renderSideList();
+      restoreScroll(scrollTop);
+    },
+    // Persist function (async)
+    async () => {
+      await persistUpdates(type, updates, Repository, NoteStorage, BookmarkStorage);
+    },
+    // Options
+    {
+      onError: (error) => {
+        console.error('Drag-drop save failed:', error);
+        showErrorToast('Move failed. Changes reverted.');
+        _renderSideList();
+        restoreScroll(scrollTop);
+      }
+    }
+  );
+}
 
-  // Find the dropped item (make a copy)
+/**
+ * Build the array of updates needed for the position change
+ * Gets ALL items in the folder (all types) and renumbers them
+ */
+function buildUpdatesArray(type, id, targetParentId, $prev, $next) {
+  const data = AppState.getData();
+  const BookmarkStorage = window.Layer?.BookmarkStorage;
+
+  // Get ALL items in the target folder (all types share the same orderIndex space)
+  let allItems = [];
+
+  // Folders (children of targetParentId)
+  data.folders
+    .filter(f => (f.parentId || null) === targetParentId)
+    .forEach(f => allItems.push({ ...f, _type: 'folder' }));
+
+  // Objectives
+  data.objectives
+    .filter(o => (o.folderId || null) === targetParentId)
+    .forEach(o => allItems.push({ ...o, _type: 'objective' }));
+
+  // Notes
+  (data.notes || [])
+    .filter(n => (n.folderId || null) === targetParentId)
+    .forEach(n => allItems.push({ ...n, _type: 'note' }));
+
+  // Bookmarks
+  (BookmarkStorage?.loadAllBookmarks() || [])
+    .filter(b => (b.folderId || null) === targetParentId)
+    .forEach(b => allItems.push({ ...b, _type: 'bookmark' }));
+
+  // Sort all by current orderIndex
+  allItems.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+  // Remove the dropped item from the list (if it was already there)
+  allItems = allItems.filter(item => item.id !== id);
+
+  // Find the dropped item from its original location
   let droppedItem;
   if (type === 'folder') {
-    const found = data.folders.find(f => f.id === id);
-    droppedItem = found ? { ...found } : null;
+    droppedItem = data.folders.find(f => f.id === id);
   } else if (type === 'objective') {
-    const found = data.objectives.find(o => o.id === id);
-    droppedItem = found ? { ...found } : null;
+    droppedItem = data.objectives.find(o => o.id === id);
   } else if (type === 'note') {
-    const found = (data.notes || []).find(n => n.id === id);
-    droppedItem = found ? { ...found } : null;
+    droppedItem = (data.notes || []).find(n => n.id === id);
   } else if (type === 'bookmark') {
-    const found = (BookmarkStorage?.loadAllBookmarks() || []).find(b => b.id === id);
-    droppedItem = found ? { ...found } : null;
+    droppedItem = (BookmarkStorage?.loadAllBookmarks() || []).find(b => b.id === id);
   }
 
   if (!droppedItem) {
-    console.error('Could not find dropped item:', type, id);
-    _renderSideList();
-    return;
+    return null;
   }
+
+  // Add type marker to dropped item
+  const droppedWithType = { ...droppedItem, _type: type };
 
   // Determine insert position based on prev/next
   let insertIndex = 0;
 
   if ($prev.length) {
     const prevId = getItemId($prev);
-    const prevType = $prev.data('type');
-
-    // Find prev item in siblings
-    if (prevType === type) {
-      const prevIndex = siblings.findIndex(s => s.id === prevId);
-      if (prevIndex !== -1) {
-        insertIndex = prevIndex + 1;
-      }
-    } else if (prevType === 'folder' && type !== 'folder') {
-      // Dropping after a folder row - insert at beginning of folder contents
-      insertIndex = 0;
+    // Find prev item in allItems (any type)
+    const prevIndex = allItems.findIndex(item => item.id === prevId);
+    if (prevIndex !== -1) {
+      insertIndex = prevIndex + 1;
     }
+  } else if (!$next.length) {
+    // No prev and no next = dropping INTO folder (center zone drop)
+    // Insert at end
+    insertIndex = allItems.length;
   }
 
   // Insert dropped item at position
-  siblings.splice(insertIndex, 0, droppedItem);
+  allItems.splice(insertIndex, 0, droppedWithType);
 
-  // Renumber all siblings and set parent
-  const updates = siblings.map((item, index) => ({
+  // Renumber ALL items and build updates with correct parent field per type
+  return allItems.map((item, index) => ({
     id: item.id,
+    _type: item._type,
     orderIndex: index * 1000,
-    parentId: type === 'folder' ? targetParentId : undefined,
-    folderId: type !== 'folder' ? targetParentId : undefined
+    parentId: item._type === 'folder' ? targetParentId : undefined,
+    folderId: item._type !== 'folder' ? targetParentId : undefined
   }));
+}
 
-  console.log('Saving updates:', updates);
+/**
+ * Apply updates to local state (mutate AppState directly)
+ * Handles mixed types since updates now include _type field
+ */
+function applyUpdatesLocally(type, updates) {
+  const data = AppState.getData();
+  const BookmarkStorage = window.Layer?.BookmarkStorage;
 
-  // Save to database first, then reload fresh data
-  try {
-    if (type === 'folder' && Repository?.updateFolder) {
-      for (const update of updates) {
-        await Repository.updateFolder({ id: update.id, orderIndex: update.orderIndex, parentId: update.parentId });
+  for (const update of updates) {
+    // Use _type from update if available, otherwise fall back to passed type
+    const itemType = update._type || type;
+
+    if (itemType === 'folder') {
+      const folder = data.folders.find(f => f.id === update.id);
+      if (folder) {
+        folder.orderIndex = update.orderIndex;
+        folder.parentId = update.parentId;
       }
-    } else if (type === 'objective' && Repository?.updateObjectiveOrder) {
-      for (const update of updates) {
-        await Repository.updateObjectiveOrder(update.id, update.orderIndex, update.folderId);
+    } else if (itemType === 'objective') {
+      const objective = data.objectives.find(o => o.id === update.id);
+      if (objective) {
+        objective.orderIndex = update.orderIndex;
+        objective.folderId = update.folderId;
       }
-    } else if (type === 'note' && NoteStorage?.updateNoteOrder) {
-      for (const update of updates) {
-        await NoteStorage.updateNoteOrder(update.id, update.orderIndex, update.folderId);
+    } else if (itemType === 'note') {
+      const note = (data.notes || []).find(n => n.id === update.id);
+      if (note) {
+        note.orderIndex = update.orderIndex;
+        note.folderId = update.folderId;
       }
-    } else if (type === 'bookmark' && BookmarkStorage?.updateBookmarkOrder) {
-      for (const update of updates) {
-        BookmarkStorage.updateBookmarkOrder(update.id, update.orderIndex, update.folderId);
-      }
+    } else if (itemType === 'bookmark') {
+      // Bookmarks use localStorage - update directly
+      BookmarkStorage?.updateBookmarkOrder?.(update.id, update.orderIndex, update.folderId);
     }
+  }
+}
 
-    // Reload fresh data from database
-    if (Repository?.reloadData) {
-      const reloadedData = await Repository.reloadData();
-      if (reloadedData) {
-        AppState.setObjectives(reloadedData.objectives);
-        AppState.setFolders(reloadedData.folders);
-        if (reloadedData.notes) AppState.setNotes(reloadedData.notes);
-      }
+/**
+ * Persist updates to database
+ * Handles mixed types since updates now include _type field
+ */
+async function persistUpdates(type, updates, Repository, NoteStorage, BookmarkStorage) {
+  const savePromises = [];
+
+  for (const update of updates) {
+    // Use _type from update if available, otherwise fall back to passed type
+    const itemType = update._type || type;
+
+    if (itemType === 'folder' && Repository?.updateFolder) {
+      savePromises.push(
+        Repository.updateFolder({ id: update.id, orderIndex: update.orderIndex, parentId: update.parentId })
+      );
+    } else if (itemType === 'objective' && Repository?.updateObjectiveOrder) {
+      savePromises.push(
+        Repository.updateObjectiveOrder(update.id, update.orderIndex, update.folderId)
+      );
+    } else if (itemType === 'note' && NoteStorage?.updateNoteOrder) {
+      savePromises.push(
+        NoteStorage.updateNoteOrder(update.id, update.orderIndex, update.folderId)
+      );
     }
-  } catch (err) {
-    console.error('Failed to save position updates:', err);
+    // Bookmarks are localStorage-only, already updated in applyUpdatesLocally
   }
 
-  _renderSideList();
+  // Run all saves in parallel
+  await Promise.all(savePromises);
+}
+
+/**
+ * Restore scroll position after re-render
+ */
+function restoreScroll(scrollTop) {
+  const $container = $('#side-list-items');
+  if ($container.length && scrollTop > 0) {
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      $container[0].scrollTop = scrollTop;
+    });
+  }
 }
 
 // ========================================
