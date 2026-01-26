@@ -3957,33 +3957,53 @@ h3.ce-header {
   padding: 4px 0;
 }
 
+/* Outer container - just handles spacing */
 .cdx-checklist__item-checkbox {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border);
-  border-radius: 4px;
-  margin-right: 10px;
+  margin-right: 10px !important;
   flex-shrink: 0;
-  background: transparent;
+}
+
+/* Actual visual checkbox - override plugin's default styles */
+.cdx-checklist__item-checkbox-check {
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 4px !important;
+  background: transparent !important;
   cursor: pointer;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
-.cdx-checklist__item--checked .cdx-checklist__item-checkbox {
-  background: var(--accent);
-  border-color: var(--accent);
+/* Hide plugin's SVG checkmark - we use CSS ::after instead */
+.cdx-checklist__item-checkbox-check svg {
+  display: none !important;
 }
 
-.cdx-checklist__item--checked .cdx-checklist__item-checkbox::after {
+/* Checked state - themed accent color */
+.cdx-checklist__item--checked .cdx-checklist__item-checkbox-check {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+/* Disable plugin's ripple animation */
+.cdx-checklist__item-checkbox-check::before {
+  display: none !important;
+}
+
+/* CSS checkmark - centered with flexbox */
+.cdx-checklist__item--checked .cdx-checklist__item-checkbox-check::after {
   content: '';
-  display: block;
-  width: 5px;
-  height: 9px;
+  width: 4px;
+  height: 8px;
   border: solid white;
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-  margin: 2px 0 0 5px;
+  transform: rotate(45deg) translateY(-1px);
 }
 
+/* Checked text styling */
 .cdx-checklist__item--checked .cdx-checklist__item-text {
   color: var(--text-dim);
   text-decoration: line-through;
