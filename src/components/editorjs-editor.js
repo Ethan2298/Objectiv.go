@@ -1,7 +1,7 @@
 /**
  * Editor.js Component
  *
- * Provides a Notion-style block-based editing experience for notes.
+ * Provides a block-based editing experience for notes.
  * Uses Editor.js with plugins for headings, lists, quotes, code, etc.
  *
  * All plugins are loaded from local files (src/lib/editorjs/) to allow
@@ -32,7 +32,8 @@ import {
   ColorPlugin,
   AlignmentTune,
   Undo,
-  DragDrop
+  DragDrop,
+  MarkdownShortcuts
 } from '../lib/editorjs/index.js';
 
 /**
@@ -236,6 +237,34 @@ export async function initNoteEditor(content, noteId, container, onAutoSave) {
       // Initialize drag-and-drop block reordering with custom border style
       // Ghost image is now handled directly in the local drag-drop.js plugin
       new DragDrop(editorInstance, '2px solid var(--accent, #0891b2)');
+      // Initialize markdown shortcuts for block conversion
+      new MarkdownShortcuts(editorInstance);
+
+      // Restart toolbar fade-in animation when toolbar moves to a new block
+      const setupToolbarAnimation = () => {
+        const toolbar = editorElement.querySelector('.ce-toolbar');
+        if (!toolbar) {
+          // Toolbar not ready yet, wait for it
+          setTimeout(setupToolbarAnimation, 100);
+          return;
+        }
+        let lastTop = '';
+        const observer = new MutationObserver(() => {
+          const currentTop = toolbar.style.top;
+          if (currentTop && currentTop !== lastTop) {
+            lastTop = currentTop;
+            const actions = toolbar.querySelector('.ce-toolbar__actions');
+            if (actions) {
+              actions.style.animation = 'none';
+              requestAnimationFrame(() => {
+                actions.style.animation = '';
+              });
+            }
+          }
+        });
+        observer.observe(toolbar, { attributes: true, attributeFilter: ['style'] });
+      };
+      setupToolbarAnimation();
     }
   });
 

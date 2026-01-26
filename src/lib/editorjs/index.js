@@ -39,3 +39,6 @@ export { default as AlignmentTune } from './alignment.js';
 // Editor Plugins (Community)
 export { default as Undo } from './undo.js';
 export { default as DragDrop } from './drag-drop.js';
+
+// Editor Plugins (Custom)
+export { default as MarkdownShortcuts } from './markdown-shortcuts.js';

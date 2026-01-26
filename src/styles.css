@@ -44,6 +44,35 @@ body.solarized-mode {
   box-sizing: border-box;
 }
 
+/* Minimalist scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.3) transparent;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -1205,7 +1234,7 @@ body.solarized-mode .tab-add:hover {
   align-self: center;
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: clip;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1947,10 +1976,10 @@ body.solarized-mode .tab-add:hover {
 }
 
 .settings-select {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--text);
   padding: 0.5rem 2rem 0.5rem 0.75rem;
   font-size: 0.9rem;
   cursor: pointer;
@@ -3561,6 +3590,7 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   flex-direction: column;
   height: 100%;
   flex: 1;
+  overflow: visible;
 }
 
 /* Tiptap editor wrapper - fills entire area */
@@ -3569,6 +3599,7 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   flex-direction: column;
   flex: 1;
   height: 100%;
+  overflow: visible;
 }
 
 /* Note toolbar row - below global nav, only visible for notes */
@@ -3583,6 +3614,15 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
 /* Show toolbar when note mode is active */
 #content-view.note-mode .note-toolbar-row {
   display: flex;
+}
+
+/* Ensure popovers don't get clipped in note mode */
+#content-view.note-mode {
+  overflow: visible;
+}
+
+#content-view.note-mode #content-page {
+  overflow: visible;
 }
 
 .note-toolbar-group {
@@ -3761,11 +3801,25 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   color: var(--text);
   font-size: 15px;
   line-height: 1.7;
+  overflow: visible;
 }
 
-/* Remove max-width constraints for full-width editing */
 .codex-editor__redactor {
+  overflow: visible !important;
   padding-bottom: 100px !important;
+}
+
+/* Ensure toolbar elements don't get clipped */
+.ce-toolbar {
+  overflow: visible;
+}
+
+.ce-toolbar__content {
+  overflow: visible;
+}
+
+.ce-toolbar__actions {
+  overflow: visible;
 }
 
 /*
@@ -3794,12 +3848,35 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
 
 /* Position actions to the left of content */
 .ce-toolbar__actions {
-  position: absolute;
-  right: 100%;
+  position: absolute !important;
+  right: 100% !important;
+  left: auto !important;
   margin-right: 4px;
   /* Fine-tune vertical position to align with text baseline */
   top: 0;
   padding-top: 3px; /* Matches .ce-block padding-top */
+  animation: toolbar-fade-in 200ms ease-out;
+}
+
+@keyframes toolbar-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Override mobile/narrow positioning - keep actions on left */
+@media (max-width: 650px) {
+  .ce-toolbar__actions {
+    right: 100% !important;
+    left: auto !important;
+  }
+
+  .ce-toolbar__plus,
+  .ce-toolbar__settings-btn {
+    position: relative !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
 }
 
 .cdx-block {
@@ -3928,7 +4005,7 @@ h3.ce-header {
 
 /* Code block */
 .ce-code__textarea {
-  background: var(--surface-tertiary, var(--bg-secondary));
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
@@ -3962,32 +4039,75 @@ h3.ce-header {
 
 /* Inline toolbar */
 .ce-inline-toolbar {
-  background: var(--surface-secondary, var(--bg-secondary));
-  border: 1px solid var(--border);
+  background: var(--bg-subtle) !important;
+  background-color: var(--bg-subtle) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.ce-inline-toolbar__toggler-and-button-wrapper {
+  background: var(--bg-subtle);
 }
 
 .ce-inline-toolbar__dropdown {
-  background: var(--surface-secondary, var(--bg-secondary));
+  background: var(--bg-subtle) !important;
   border: 1px solid var(--border);
+  border-right: 1px solid var(--border) !important;
+}
+
+.ce-inline-toolbar__buttons {
+  background: var(--bg-subtle);
 }
 
 .ce-inline-tool {
   color: var(--text);
+  background-color: transparent;
 }
 
 .ce-inline-tool:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover) !important;
+  background-color: var(--bg-hover) !important;
 }
 
 .ce-inline-tool--active {
   color: var(--accent);
 }
 
+.ce-inline-tool--focused {
+  background: var(--bg-hover) !important;
+}
+
+.ce-inline-tool svg {
+  color: var(--text);
+  fill: currentColor;
+}
+
+.ce-inline-tool--active svg {
+  color: var(--accent);
+}
+
+/* Inline tool input (link input) */
+.ce-inline-tool-input {
+  background: var(--bg) !important;
+  background-color: var(--bg) !important;
+  border-top: 1px solid var(--border) !important;
+  color: var(--text);
+}
+
+.ce-inline-tool-input::placeholder {
+  color: var(--text-dim);
+}
+
 /* Block toolbar (plus button) */
 .ce-toolbar__plus {
   color: var(--text-dim);
+  border: none !important;
+}
+
+/* Remove border from toolbar actions */
+.ce-toolbar__actions {
+  border: none !important;
 }
 
 .ce-toolbar__plus:hover {
@@ -3997,6 +4117,7 @@ h3.ce-header {
 /* Settings popup (gear/tune button) */
 .ce-toolbar__settings-btn {
   color: var(--text-dim);
+  border: none !important;
 }
 
 .ce-toolbar__settings-btn:hover {
@@ -4005,26 +4126,46 @@ h3.ce-header {
 
 /* Block settings popup */
 .ce-settings {
-  background: var(--surface-secondary, var(--bg-secondary));
-  border: 1px solid var(--border);
+  background: var(--bg-subtle) !important;
+  background-color: var(--bg-subtle) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .ce-settings__button {
   color: var(--text);
+  background-color: transparent;
 }
 
 .ce-settings__button:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover) !important;
+  background-color: var(--bg-hover) !important;
+}
+
+.ce-settings__button--active {
+  color: var(--accent);
+}
+
+.ce-settings__button--focused {
+  background: var(--bg-hover) !important;
+}
+
+.ce-settings__button svg {
+  color: var(--text);
+}
+
+.ce-settings__button--active svg {
+  color: var(--accent);
 }
 
 /* Conversion toolbar (slash commands popup) */
 .ce-conversion-toolbar {
-  background: var(--surface-secondary, var(--bg-secondary));
-  border: 1px solid var(--border);
+  background: var(--bg-subtle) !important;
+  background-color: var(--bg-subtle) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .ce-conversion-tool {
@@ -4032,16 +4173,111 @@ h3.ce-header {
 }
 
 .ce-conversion-tool:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover) !important;
 }
 
 .ce-conversion-tool--focused {
+  background: var(--bg-hover) !important;
+}
+
+.ce-conversion-tool__icon {
+  background: var(--bg-subtle) !important;
+  box-shadow: 0 0 0 1px var(--border) !important;
+}
+
+.ce-conversion-tool__icon svg {
+  color: var(--text-dim);
+}
+
+.ce-conversion-tool--active {
+  color: var(--accent) !important;
+}
+
+.ce-conversion-tool__secondary-label {
+  color: var(--text-dim);
+}
+
+.ce-conversion-toolbar__label {
+  color: var(--text-dim);
+}
+
+/* Popover (toolbox, block settings popup) */
+.ce-popover {
+  /* Override Editor.js internal CSS variables */
+  --color-background: var(--bg-subtle);
+  --color-border: var(--border);
+  --color-text-primary: var(--text);
+  --color-text-secondary: var(--text-dim);
+  --color-border-icon: var(--border);
+  --color-border-icon-disabled: var(--border);
+  --color-text-icon-active: var(--accent);
+  --color-background-icon-active: rgba(249, 115, 22, 0.15);
+  --color-background-item-focus: var(--bg-hover);
+  --color-shadow-item-focus: rgba(249, 115, 22, 0.15);
+  --color-background-item-hover: var(--bg-hover);
+
+  background: var(--bg-subtle) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.ce-popover__search {
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+.ce-popover__search::placeholder {
+  color: var(--text-dim);
+}
+
+.ce-popover__nothing-found-message {
+  color: var(--text-dim);
+}
+
+.ce-popover-item {
+  color: var(--text);
+}
+
+.ce-popover-item:hover {
   background: var(--bg-hover);
+}
+
+.ce-popover-item--focused {
+  background: var(--bg-hover) !important;
+}
+
+.ce-popover-item__icon {
+  color: var(--text-dim);
+  background: var(--bg-subtle) !important;
+  background-color: var(--bg-subtle) !important;
+  box-shadow: 0 0 0 1px var(--border) !important;
+}
+
+.ce-popover-item__icon svg {
+  color: var(--text-dim);
+}
+
+.ce-popover-item__title {
+  color: var(--text);
+}
+
+.ce-popover-item__secondary-title {
+  color: var(--text-dim);
+}
+
+.ce-popover-item--active {
+  background: rgba(249, 115, 22, 0.15);
+}
+
+.ce-popover-item--active .ce-popover-item__icon {
+  color: var(--accent);
 }
 
 /* Inline code */
 .inline-code {
-  background: var(--surface-tertiary, var(--bg-secondary));
+  background: var(--bg-subtle);
   color: var(--accent);
   padding: 2px 6px;
   border-radius: 4px;
@@ -4064,7 +4300,14 @@ h3.ce-header {
 
 /* Focus states */
 .ce-block--focused {
-  background: transparent;
+  background: var(--accent-alpha, rgba(59, 130, 246, 0.3));
+  border-radius: 6px;
+}
+
+/* Selected block (via drag handle click) */
+.ce-block--selected .ce-block__content {
+  background: rgba(0, 120, 215, 0.3);
+  border-radius: 4px;
 }
 
 /* Remove default blue selection */
@@ -4072,19 +4315,7 @@ h3.ce-header {
   background: var(--accent-alpha, rgba(59, 130, 246, 0.3));
 }
 
-/* Drag-drop styling */
-.ce-block__content {
-  transition: border 100ms ease-out;
-}
-
-/* Ghost effect on block being dragged */
-.ce-block--dragging {
-  opacity: 0.3;
-}
-
-.ce-block--drop-target .ce-block__content:before {
-  display: none;
-}
+/* Drag-drop styling - actual styles injected by drag-drop.js */
 
 /* ========================================
    Editor.js New Plugin Styles
@@ -4136,7 +4367,7 @@ h3.ce-header {
   border-radius: 8px;
   padding: 16px;
   margin: 8px 0;
-  background: var(--surface-secondary, var(--bg-secondary));
+  background: var(--bg-subtle);
   transition: border-color 0.15s;
 }
 
@@ -4180,7 +4411,7 @@ h3.ce-header {
 }
 
 .link-tool__input {
-  background: var(--surface-tertiary, var(--bg-secondary));
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
@@ -4205,7 +4436,7 @@ h3.ce-header {
 }
 
 .embed-tool__content {
-  background: var(--surface-tertiary, var(--bg-secondary));
+  background: var(--bg-subtle);
 }
 
 .embed-tool__caption {
@@ -4230,7 +4461,7 @@ h3.ce-header {
 
 /* Warning / Callout */
 .cdx-warning {
-  background: var(--surface-tertiary, var(--bg-secondary));
+  background: var(--bg-subtle);
   border-left: 4px solid #f59e0b;
   padding: 12px 16px;
   border-radius: 0 6px 6px 0;
@@ -4350,7 +4581,7 @@ h3.ce-header {
   flex-wrap: wrap;
   gap: 4px;
   padding: 8px;
-  background: var(--surface-secondary, var(--bg-secondary));
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
