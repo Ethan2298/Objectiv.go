@@ -4227,7 +4227,7 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   }
 
   #content-view.note-mode #content-header {
-    padding: 0 24px 12px 50px;
+    padding: 0 24px 24px 50px;
   }
 
   .note-editor .cm-scroller {
@@ -4244,7 +4244,7 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   max-width: 800px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 40px 12px 80px;  /* Match editor content padding */
+  padding: 0 0 24px var(--editor-gutter-width);  /* Match editor content padding */
 }
 
 #content-view.note-mode #content-header-title {

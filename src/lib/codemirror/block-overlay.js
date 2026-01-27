@@ -47,6 +47,11 @@ export const addToSelectionEffect = StateEffect.define();
  */
 export const clearBlockSelectionEffect = StateEffect.define();
 
+/**
+ * Effect to set pending selection (during drag)
+ */
+export const setPendingSelectionEffect = StateEffect.define();
+
 // ========================================
 // State Field
 // ========================================
@@ -86,45 +91,86 @@ export const selectedBlockField = StateField.define({
   }
 });
 
+/**
+ * StateField to track pending block selection during drag (array of indices)
+ */
+export const pendingBlockField = StateField.define({
+  create() {
+    return []; // Empty pending selection
+  },
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setPendingSelectionEffect)) {
+        return effect.value;
+      }
+    }
+    // Clear pending selection on document changes
+    if (tr.docChanged) {
+      return [];
+    }
+    return value;
+  }
+});
+
 // ========================================
 // Block Selection Decorations
 // ========================================
 
 /**
- * Decoration for selected block background
+ * Decoration for selected block background (committed selection)
  */
 const selectedBlockDecoration = Decoration.line({ class: 'cm-block-selected' });
 
 /**
- * Create decorations for selected blocks
+ * Decoration for pending block background (during drag)
+ */
+const pendingBlockDecoration = Decoration.line({ class: 'cm-block-pending' });
+
+/**
+ * Create decorations for selected and pending blocks
  */
 function createSelectionDecorations(view) {
   const builder = new RangeSetBuilder();
   const selectedIndices = view.state.field(selectedBlockField);
+  const pendingIndices = view.state.field(pendingBlockField);
 
-  if (selectedIndices.length === 0) {
+  if (selectedIndices.length === 0 && pendingIndices.length === 0) {
     return builder.finish();
   }
 
   const blocks = parseBlocks(view.state.doc);
 
-  // Collect all lines that need decoration (must be added in order)
-  const linesToDecorate = [];
+  // Build a map of line -> decoration type
+  // Pending takes precedence over selected for visual feedback during drag
+  const lineDecorations = new Map();
 
+  // Add selected lines
   for (const selectedIndex of selectedIndices) {
     const block = blocks[selectedIndex];
     if (!block) continue;
 
     for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
-      linesToDecorate.push(lineNum);
+      if (!lineDecorations.has(lineNum)) {
+        lineDecorations.set(lineNum, selectedBlockDecoration);
+      }
     }
   }
 
-  // Sort and dedupe lines, then add decorations
-  const uniqueLines = [...new Set(linesToDecorate)].sort((a, b) => a - b);
-  for (const lineNum of uniqueLines) {
+  // Add pending lines (overrides selected)
+  for (const pendingIndex of pendingIndices) {
+    const block = blocks[pendingIndex];
+    if (!block) continue;
+
+    for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
+      lineDecorations.set(lineNum, pendingBlockDecoration);
+    }
+  }
+
+  // Sort lines and add decorations in order
+  const sortedLines = [...lineDecorations.keys()].sort((a, b) => a - b);
+  for (const lineNum of sortedLines) {
     const line = view.state.doc.line(lineNum);
-    builder.add(line.from, line.from, selectedBlockDecoration);
+    builder.add(line.from, line.from, lineDecorations.get(lineNum));
   }
 
   return builder.finish();
@@ -145,7 +191,8 @@ const selectionDecorationPlugin = ViewPlugin.fromClass(class {
             e.is(selectBlockEffect) ||
             e.is(selectBlocksEffect) ||
             e.is(addToSelectionEffect) ||
-            e.is(clearBlockSelectionEffect)
+            e.is(clearBlockSelectionEffect) ||
+            e.is(setPendingSelectionEffect)
           )
         )) {
       this.decorations = createSelectionDecorations(update.view);
@@ -369,6 +416,17 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         });
       }
 
+      // Clear CodeMirror text selection (prevents interference with block selection)
+      const selection = this.view.state.selection;
+      if (selection.ranges.length > 0) {
+        this.view.dispatch({
+          selection: { anchor: 0 }
+        });
+      }
+
+      // Blur the editor to hide cursor during block selection
+      this.view.contentDOM.blur();
+
       this.isSelecting = true;
 
       // Store start position in DOCUMENT coordinates (scroll-independent)
@@ -376,8 +434,9 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       this.selectionStartX = e.clientX;
       this.pendingSelection.clear();
 
-      // Add selecting class to hide hover handles
+      // Add selecting class to hide hover handles and disable text selection
       this.overlay.classList.add('is-selecting');
+      this.view.dom.classList.add('cm-block-selecting');
 
       // Start auto-scroll interval
       this.autoScrollInterval = setInterval(() => {
@@ -527,8 +586,9 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         this.autoScrollInterval = null;
       }
 
-      // Remove selecting class
+      // Remove selecting classes
       this.overlay.classList.remove('is-selecting');
+      this.view.dom.classList.remove('cm-block-selecting');
 
       // Hide selection rectangle
       if (this.selectionRect) {
@@ -683,7 +743,7 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
   }
 
   /**
-   * Update visuals during pending selection
+   * Update visuals during pending selection using CodeMirror decorations
    */
   updatePendingSelectionVisuals() {
     // Update handle wrappers
@@ -691,32 +751,11 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       wrapper.classList.toggle('pending-selection', this.pendingSelection.has(blockIndex));
     }
 
-    // Update block lines in the editor
-    this.clearPendingBlockHighlights();
-    for (const blockIndex of this.pendingSelection) {
-      const block = this.blocks[blockIndex];
-      if (!block) continue;
-
-      for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
-        const line = this.view.state.doc.line(lineNum);
-        const lineDOM = this.view.domAtPos(line.from);
-        if (lineDOM && lineDOM.node) {
-          let element = lineDOM.node.nodeType === 1 ? lineDOM.node : lineDOM.node.parentElement;
-          const lineElement = element?.closest('.cm-line');
-          if (lineElement) {
-            lineElement.classList.add('cm-block-pending');
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Clear pending block highlights from lines
-   */
-  clearPendingBlockHighlights() {
-    const pendingLines = this.view.contentDOM.querySelectorAll('.cm-block-pending');
-    pendingLines.forEach(el => el.classList.remove('cm-block-pending'));
+    // Dispatch effect to update pending selection decorations
+    const pendingArray = Array.from(this.pendingSelection).sort((a, b) => a - b);
+    this.view.dispatch({
+      effects: setPendingSelectionEffect.of(pendingArray)
+    });
   }
 
   /**
@@ -726,7 +765,10 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     for (const [blockIndex, wrapper] of this.handleElements) {
       wrapper.classList.remove('pending-selection');
     }
-    this.clearPendingBlockHighlights();
+    // Clear pending selection via effect
+    this.view.dispatch({
+      effects: setPendingSelectionEffect.of([])
+    });
   }
 
   /**
@@ -1277,6 +1319,18 @@ const blockOverlayStyles = EditorView.baseTheme({
   // Dragging state
   '& .cm-block-handle-wrapper.dragging': {
     opacity: '0.5'
+  },
+
+  // Disable text selection during block drag selection
+  '&.cm-block-selecting': {
+    userSelect: 'none',
+    WebkitUserSelect: 'none'
+  },
+
+  '&.cm-block-selecting .cm-content': {
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    cursor: 'default'
   }
 });
 
@@ -1289,6 +1343,7 @@ const blockOverlayStyles = EditorView.baseTheme({
  */
 export const blockOverlayExtension = [
   selectedBlockField,
+  pendingBlockField,
   selectionDecorationPlugin,
   blockHandlesPlugin,
   clickToClearSelection,
