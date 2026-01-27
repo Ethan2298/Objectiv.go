@@ -15,6 +15,7 @@
   --tab-close-bg: rgb(90, 90, 90);
   --tab-close-bg-hover: rgb(110, 110, 110);
   --tab-close-color: white;
+  --editor-gutter-width: 60px;
 }
 
 body.light-mode {
@@ -4234,7 +4235,7 @@ body.solarized-mode .delete-modal-btn.cancel:hover {
   }
 
   .note-editor .cm-content {
-    padding: 0 24px 200px 50px;  /* Less padding on mobile */
+    padding: 0 0 200px 50px;  /* Gutter only on mobile */
   }
 }
 
@@ -5273,7 +5274,7 @@ h3.ce-header {
 .note-editor .cm-content {
   max-width: 800px;         /* Readable width */
   width: 100%;
-  padding: 0 40px 200px 80px;  /* Left padding for block handles */
+  padding: 0 0 200px var(--editor-gutter-width);  /* Left padding for gutter */
   min-height: 200px;
 }
 
@@ -5284,7 +5285,9 @@ h3.ce-header {
 
 /* Line styling */
 .note-editor .cm-line {
-  padding: 2px 0;
+  padding: 3px 6px;
+  margin: 1px 0;
+  border-radius: 4px;
 }
 
 /* Selection */

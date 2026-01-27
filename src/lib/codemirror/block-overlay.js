@@ -28,9 +28,19 @@ import {
 // ========================================
 
 /**
- * Effect to select a block
+ * Effect to select a single block (replaces current selection)
  */
 export const selectBlockEffect = StateEffect.define();
+
+/**
+ * Effect to select multiple blocks (replaces current selection)
+ */
+export const selectBlocksEffect = StateEffect.define();
+
+/**
+ * Effect to add blocks to selection
+ */
+export const addToSelectionEffect = StateEffect.define();
 
 /**
  * Effect to clear block selection
@@ -42,24 +52,35 @@ export const clearBlockSelectionEffect = StateEffect.define();
 // ========================================
 
 /**
- * StateField to track the selected block index
+ * StateField to track selected block indices (Set stored as array for serialization)
  */
 export const selectedBlockField = StateField.define({
   create() {
-    return -1; // No selection
+    return []; // Empty selection (array of indices)
   },
   update(value, tr) {
     for (const effect of tr.effects) {
       if (effect.is(selectBlockEffect)) {
+        // Single block selection - wrap in array
+        return effect.value >= 0 ? [effect.value] : [];
+      }
+      if (effect.is(selectBlocksEffect)) {
+        // Multi-block selection - use array directly
         return effect.value;
       }
+      if (effect.is(addToSelectionEffect)) {
+        // Add to existing selection
+        const toAdd = Array.isArray(effect.value) ? effect.value : [effect.value];
+        const newSet = new Set([...value, ...toAdd]);
+        return Array.from(newSet).sort((a, b) => a - b);
+      }
       if (effect.is(clearBlockSelectionEffect)) {
-        return -1;
+        return [];
       }
     }
     // Clear selection on document changes
     if (tr.docChanged) {
-      return -1;
+      return [];
     }
     return value;
   }
@@ -75,25 +96,33 @@ export const selectedBlockField = StateField.define({
 const selectedBlockDecoration = Decoration.line({ class: 'cm-block-selected' });
 
 /**
- * Create decorations for selected block
+ * Create decorations for selected blocks
  */
 function createSelectionDecorations(view) {
   const builder = new RangeSetBuilder();
-  const selectedIndex = view.state.field(selectedBlockField);
+  const selectedIndices = view.state.field(selectedBlockField);
 
-  if (selectedIndex < 0) {
+  if (selectedIndices.length === 0) {
     return builder.finish();
   }
 
   const blocks = parseBlocks(view.state.doc);
-  const block = blocks[selectedIndex];
 
-  if (!block) {
-    return builder.finish();
+  // Collect all lines that need decoration (must be added in order)
+  const linesToDecorate = [];
+
+  for (const selectedIndex of selectedIndices) {
+    const block = blocks[selectedIndex];
+    if (!block) continue;
+
+    for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
+      linesToDecorate.push(lineNum);
+    }
   }
 
-  // Add decoration for each line of the selected block
-  for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
+  // Sort and dedupe lines, then add decorations
+  const uniqueLines = [...new Set(linesToDecorate)].sort((a, b) => a - b);
+  for (const lineNum of uniqueLines) {
     const line = view.state.doc.line(lineNum);
     builder.add(line.from, line.from, selectedBlockDecoration);
   }
@@ -112,7 +141,12 @@ const selectionDecorationPlugin = ViewPlugin.fromClass(class {
   update(update) {
     if (update.docChanged ||
         update.transactions.some(tr =>
-          tr.effects.some(e => e.is(selectBlockEffect) || e.is(clearBlockSelectionEffect))
+          tr.effects.some(e =>
+            e.is(selectBlockEffect) ||
+            e.is(selectBlocksEffect) ||
+            e.is(addToSelectionEffect) ||
+            e.is(clearBlockSelectionEffect)
+          )
         )) {
       this.decorations = createSelectionDecorations(update.view);
     }
@@ -135,10 +169,19 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     this.overlay = null;
     this.handleElements = new Map();
     this.hoveredBlockIndex = -1; // Track which block is being hovered
+
+    // Multi-block selection state
+    this.isSelecting = false;
+    this.selectionStartY = null;
+    this.selectionStartX = null;
+    this.pendingSelection = new Set(); // Blocks being selected during drag
+    this.selectionRect = null; // Visual selection rectangle
+
     this.createOverlay();
     this.updateBlocks();
     this.renderHandles();
     this.setupBlockHoverTracking();
+    this.setupMarginSelection();
   }
 
   /**
@@ -152,10 +195,24 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       top: 0;
       left: 0;
       right: 0;
-      bottom: 0;
       pointer-events: none;
       z-index: 10;
     `;
+    // Height will be set by updateOverlayHeight()
+
+    // Create selection rectangle for visual feedback during drag
+    this.selectionRect = document.createElement('div');
+    this.selectionRect.className = 'cm-selection-rect';
+    this.selectionRect.style.cssText = `
+      position: absolute;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 3px;
+      pointer-events: none;
+      display: none;
+      z-index: 50;
+    `;
+    this.overlay.appendChild(this.selectionRect);
 
     // Use event delegation for handle interactions
     this.overlay.addEventListener('mousedown', this.handleMouseDown.bind(this), true);
@@ -167,8 +224,33 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       if (scroller && this.overlay) {
         scroller.style.position = 'relative';
         scroller.appendChild(this.overlay);
+        this.updateOverlayHeight();
       }
     });
+  }
+
+  /**
+   * Convert viewport (client) coordinates to overlay-relative coordinates
+   * Accounts for scroll position so coordinates are relative to full content
+   */
+  viewportToOverlayCoords(clientX, clientY) {
+    const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+    const scrollTop = this.view.scrollDOM.scrollTop;
+    return {
+      x: clientX - scrollerRect.left,
+      y: clientY - scrollerRect.top + scrollTop
+    };
+  }
+
+  /**
+   * Update overlay height to match content
+   */
+  updateOverlayHeight() {
+    if (!this.overlay) return;
+    const contentHeight = this.view.contentDOM.offsetHeight;
+    const scrollerHeight = this.view.scrollDOM.clientHeight;
+    // Use the larger of content height or visible area
+    this.overlay.style.height = `${Math.max(contentHeight, scrollerHeight)}px`;
   }
 
   /**
@@ -195,6 +277,398 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     // Attach listeners to the scroll DOM (includes margins)
     this.view.scrollDOM.addEventListener('mousemove', this.handleMouseMove);
     this.view.scrollDOM.addEventListener('mouseleave', this.handleMouseLeave);
+  }
+
+  /**
+   * Set up margin selection for multi-block selection
+   */
+  setupMarginSelection() {
+    // Check if click is in margin area (left or right of content)
+    this.isInMargin = (e) => {
+      const contentRect = this.view.contentDOM.getBoundingClientRect();
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const x = e.clientX;
+
+      // Left margin: between scroller left and content left
+      const inLeftMargin = x >= scrollerRect.left && x < contentRect.left;
+      // Right margin: between content right and scroller right
+      const inRightMargin = x > contentRect.right && x <= scrollerRect.right;
+
+      return inLeftMargin || inRightMargin;
+    };
+
+    // Get document Y coordinate from viewport Y
+    this.getDocumentY = (clientY) => {
+      const contentPage = document.getElementById('content-page');
+      if (contentPage) {
+        return clientY + contentPage.scrollTop;
+      }
+      return clientY + window.scrollY;
+    };
+
+    // Get viewport Y coordinate from document Y
+    this.getViewportY = (docY) => {
+      const contentPage = document.getElementById('content-page');
+      if (contentPage) {
+        return docY - contentPage.scrollTop;
+      }
+      return docY - window.scrollY;
+    };
+
+    // Handle mousedown in margin to start selection
+    this.handleMarginMouseDown = (e) => {
+      if (!this.isInMargin(e)) return;
+      if (e.target.closest('.cm-block-handle-wrapper')) return;
+
+      e.preventDefault();
+
+      // Clear any existing block selection
+      const selectedIndices = this.view.state.field(selectedBlockField);
+      if (selectedIndices.length > 0) {
+        this.view.dispatch({
+          effects: clearBlockSelectionEffect.of(null)
+        });
+      }
+
+      this.isSelecting = true;
+
+      // Store start position in DOCUMENT coordinates (scroll-independent)
+      this.selectionStartDocY = this.getDocumentY(e.clientY);
+      this.selectionStartX = e.clientX;
+      this.pendingSelection.clear();
+
+      // Add selecting class to hide hover handles
+      this.overlay.classList.add('is-selecting');
+
+      // Start auto-scroll interval
+      this.autoScrollInterval = setInterval(() => {
+        if (!this.isSelecting || this.lastMouseY === undefined) return;
+
+        const scrollThreshold = 80;
+        const scrollSpeed = 15;
+        const viewportTop = 0;
+        const viewportBottom = window.innerHeight;
+
+        let scrollAmount = 0;
+
+        if (this.lastMouseY < viewportTop + scrollThreshold) {
+          const proximity = 1 - Math.max(0, this.lastMouseY) / scrollThreshold;
+          scrollAmount = -scrollSpeed * Math.max(0.3, proximity);
+        } else if (this.lastMouseY > viewportBottom - scrollThreshold) {
+          const proximity = 1 - (viewportBottom - this.lastMouseY) / scrollThreshold;
+          scrollAmount = scrollSpeed * Math.max(0.3, proximity);
+        }
+
+        if (scrollAmount !== 0) {
+          const scrolled = this.performScroll(scrollAmount);
+          if (scrolled) {
+            this.updateSelectionAfterScroll();
+          }
+        }
+      }, 16);
+
+      // Store start position in overlay coordinates
+      const startOverlay = this.viewportToOverlayCoords(e.clientX, e.clientY);
+      this.selectionStartOverlayPos = startOverlay;
+
+      // Set overflow hidden on overlay during selection
+      this.overlay.style.overflow = 'hidden';
+
+      // Show selection rectangle (now using overlay coordinates)
+      if (this.selectionRect) {
+        this.selectionRect.style.display = 'block';
+        this.selectionRect.style.left = `${startOverlay.x}px`;
+        this.selectionRect.style.top = `${startOverlay.y}px`;
+        this.selectionRect.style.width = '0px';
+        this.selectionRect.style.height = '0px';
+      }
+
+      // Store initial mouse position
+      this.lastMouseY = e.clientY;
+      this.lastMouseX = e.clientX;
+
+      document.addEventListener('mousemove', this.handleSelectionDrag);
+      document.addEventListener('mouseup', this.handleSelectionEnd);
+    };
+
+    // Handle drag during selection
+    this.handleSelectionDrag = (e) => {
+      if (!this.isSelecting) return;
+
+      this.lastMouseY = e.clientY;
+      this.lastMouseX = e.clientX;
+
+      this.updateSelectionVisuals();
+    };
+
+    // Update selection visuals (called on drag and after auto-scroll)
+    this.updateSelectionAfterScroll = () => {
+      if (!this.isSelecting || this.lastMouseY === undefined) return;
+      this.updateSelectionVisuals();
+    };
+
+    // Perform scroll on the appropriate container
+    this.performScroll = (amount) => {
+      const contentPage = document.getElementById('content-page');
+      if (contentPage && contentPage.scrollHeight > contentPage.clientHeight) {
+        const before = contentPage.scrollTop;
+        contentPage.scrollTop += amount;
+        if (contentPage.scrollTop !== before) return true;
+      }
+
+      const contentView = document.getElementById('content-view');
+      if (contentView && contentView.scrollHeight > contentView.clientHeight) {
+        const before = contentView.scrollTop;
+        contentView.scrollTop += amount;
+        if (contentView.scrollTop !== before) return true;
+      }
+
+      const before = window.scrollY;
+      window.scrollBy(0, amount);
+      return window.scrollY !== before;
+    };
+
+    // Core selection visual update
+    this.updateSelectionVisuals = () => {
+      // Get current mouse position in document coordinates (for block detection)
+      const currentDocY = this.getDocumentY(this.lastMouseY);
+
+      // Calculate range in document coordinates (for block detection)
+      const minDocY = Math.min(this.selectionStartDocY, currentDocY);
+      const maxDocY = Math.max(this.selectionStartDocY, currentDocY);
+      const minX = Math.min(this.selectionStartX, this.lastMouseX);
+      const maxX = Math.max(this.selectionStartX, this.lastMouseX);
+
+      // Convert current mouse position to overlay coordinates
+      const currentOverlay = this.viewportToOverlayCoords(this.lastMouseX, this.lastMouseY);
+
+      // Calculate rectangle bounds in overlay coordinates
+      const overlayMinX = Math.min(this.selectionStartOverlayPos.x, currentOverlay.x);
+      const overlayMaxX = Math.max(this.selectionStartOverlayPos.x, currentOverlay.x);
+      const overlayMinY = Math.min(this.selectionStartOverlayPos.y, currentOverlay.y);
+      const overlayMaxY = Math.max(this.selectionStartOverlayPos.y, currentOverlay.y);
+
+      // Update selection rectangle position and size (overlay coords)
+      // Container's overflow:hidden handles clipping
+      if (this.selectionRect) {
+        this.selectionRect.style.left = `${overlayMinX}px`;
+        this.selectionRect.style.top = `${overlayMinY}px`;
+        this.selectionRect.style.width = `${overlayMaxX - overlayMinX}px`;
+        this.selectionRect.style.height = `${overlayMaxY - overlayMinY}px`;
+      }
+
+      // Find all blocks in the DOCUMENT Y range (not just visible)
+      // This ensures scrolled-out blocks stay selected
+      const blocksInRange = this.getBlocksInDocumentRange(minDocY, maxDocY, minX, maxX);
+
+      // Update pending selection - accumulate, don't replace
+      // Only clear if we're shrinking the selection
+      for (const blockIndex of blocksInRange) {
+        this.pendingSelection.add(blockIndex);
+      }
+
+      // Remove blocks that are no longer in range
+      for (const blockIndex of [...this.pendingSelection]) {
+        if (!blocksInRange.includes(blockIndex)) {
+          this.pendingSelection.delete(blockIndex);
+        }
+      }
+
+      this.updatePendingSelectionVisuals();
+    };
+
+    // Handle mouseup to commit selection
+    this.handleSelectionEnd = (e) => {
+      if (!this.isSelecting) return;
+
+      document.removeEventListener('mousemove', this.handleSelectionDrag);
+      document.removeEventListener('mouseup', this.handleSelectionEnd);
+
+      this.isSelecting = false;
+
+      // Clear auto-scroll interval
+      if (this.autoScrollInterval) {
+        clearInterval(this.autoScrollInterval);
+        this.autoScrollInterval = null;
+      }
+
+      // Remove selecting class and reset overflow
+      this.overlay.classList.remove('is-selecting');
+      this.overlay.style.overflow = '';
+
+      // Hide selection rectangle
+      if (this.selectionRect) {
+        this.selectionRect.style.display = 'none';
+      }
+
+      // Commit selection to state
+      if (this.pendingSelection.size > 0) {
+        const selectedArray = Array.from(this.pendingSelection).sort((a, b) => a - b);
+        this.view.dispatch({
+          effects: selectBlocksEffect.of(selectedArray)
+        });
+      }
+
+      this.pendingSelection.clear();
+      this.clearPendingSelectionVisuals();
+    };
+
+    // Attach mousedown listener to scroller
+    this.view.scrollDOM.addEventListener('mousedown', this.handleMarginMouseDown);
+  }
+
+  /**
+   * Get block index at a Y coordinate
+   */
+  getBlockIndexAtY(clientY) {
+    if (!this.blocks || this.blocks.length === 0) return -1;
+
+    const contentRect = this.view.contentDOM.getBoundingClientRect();
+
+    for (let i = 0; i < this.blocks.length; i++) {
+      const block = this.blocks[i];
+      const startLine = this.view.state.doc.line(block.startLine);
+      const endLine = this.view.state.doc.line(block.endLine);
+
+      const startPos = this.view.lineBlockAt(startLine.from);
+      const endPos = this.view.lineBlockAt(endLine.from);
+
+      const blockTop = startPos.top + contentRect.top - this.view.scrollDOM.scrollTop;
+      const blockBottom = endPos.top + endPos.height + contentRect.top - this.view.scrollDOM.scrollTop;
+
+      if (clientY >= blockTop && clientY < blockBottom) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * Get all block indices whose bounding box overlaps with the selection rectangle
+   * Note: All coordinates are in viewport (screen) coordinates
+   */
+  getBlocksInRect(minX, minY, maxX, maxY) {
+    const result = [];
+    if (!this.blocks || this.blocks.length === 0) return result;
+
+    const contentRect = this.view.contentDOM.getBoundingClientRect();
+
+    for (let i = 0; i < this.blocks.length; i++) {
+      const block = this.blocks[i];
+      const startLine = this.view.state.doc.line(block.startLine);
+      const endLine = this.view.state.doc.line(block.endLine);
+
+      const startPos = this.view.lineBlockAt(startLine.from);
+      const endPos = this.view.lineBlockAt(endLine.from);
+
+      // Block's bounding box in viewport coordinates
+      // lineBlockAt gives position relative to editor top, contentRect.top is editor's viewport position
+      const editorScrollTop = this.view.scrollDOM.scrollTop;
+      const blockTop = startPos.top - editorScrollTop + contentRect.top;
+      const blockBottom = endPos.top + endPos.height - editorScrollTop + contentRect.top;
+      const blockLeft = contentRect.left;
+      const blockRight = contentRect.right;
+
+      // Check if selection rectangle overlaps with block's bounding box
+      const overlapsY = minY < blockBottom && maxY > blockTop;
+      const overlapsX = minX < blockRight && maxX > blockLeft;
+
+      if (overlapsX && overlapsY) {
+        result.push(i);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all block indices whose document Y range overlaps with the given range
+   * Uses document coordinates so scrolling doesn't affect results
+   */
+  getBlocksInDocumentRange(minDocY, maxDocY, minX, maxX) {
+    const result = [];
+    if (!this.blocks || this.blocks.length === 0) return result;
+
+    const contentRect = this.view.contentDOM.getBoundingClientRect();
+    const contentPage = document.getElementById('content-page');
+    const scrollTop = contentPage ? contentPage.scrollTop : window.scrollY;
+
+    for (let i = 0; i < this.blocks.length; i++) {
+      const block = this.blocks[i];
+      const startLine = this.view.state.doc.line(block.startLine);
+      const endLine = this.view.state.doc.line(block.endLine);
+
+      const startPos = this.view.lineBlockAt(startLine.from);
+      const endPos = this.view.lineBlockAt(endLine.from);
+
+      // Convert block positions to document coordinates
+      const editorDocTop = contentRect.top + scrollTop;
+      const blockDocTop = startPos.top - this.view.scrollDOM.scrollTop + editorDocTop;
+      const blockDocBottom = endPos.top + endPos.height - this.view.scrollDOM.scrollTop + editorDocTop;
+
+      // X bounds in viewport (these don't change with scroll)
+      const blockLeft = contentRect.left;
+      const blockRight = contentRect.right;
+
+      // Check overlap
+      const overlapsY = minDocY < blockDocBottom && maxDocY > blockDocTop;
+      const overlapsX = minX < blockRight && maxX > blockLeft;
+
+      if (overlapsX && overlapsY) {
+        result.push(i);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Update visuals during pending selection
+   */
+  updatePendingSelectionVisuals() {
+    // Update handle wrappers
+    for (const [blockIndex, wrapper] of this.handleElements) {
+      wrapper.classList.toggle('pending-selection', this.pendingSelection.has(blockIndex));
+    }
+
+    // Update block lines in the editor
+    this.clearPendingBlockHighlights();
+    for (const blockIndex of this.pendingSelection) {
+      const block = this.blocks[blockIndex];
+      if (!block) continue;
+
+      for (let lineNum = block.startLine; lineNum <= block.endLine; lineNum++) {
+        const line = this.view.state.doc.line(lineNum);
+        const lineDOM = this.view.domAtPos(line.from);
+        if (lineDOM && lineDOM.node) {
+          // Find the .cm-line element by traversing up the DOM
+          let element = lineDOM.node.nodeType === 1 ? lineDOM.node : lineDOM.node.parentElement;
+          const lineElement = element?.closest('.cm-line');
+          if (lineElement) {
+            lineElement.classList.add('cm-block-pending');
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Clear pending block highlights from lines
+   */
+  clearPendingBlockHighlights() {
+    const pendingLines = this.view.contentDOM.querySelectorAll('.cm-block-pending');
+    pendingLines.forEach(el => el.classList.remove('cm-block-pending'));
+  }
+
+  /**
+   * Clear pending selection visuals
+   */
+  clearPendingSelectionVisuals() {
+    for (const [blockIndex, wrapper] of this.handleElements) {
+      wrapper.classList.remove('pending-selection');
+    }
+    this.clearPendingBlockHighlights();
   }
 
   /**
@@ -282,7 +756,7 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
 
     const { fromLine, toLine } = this.getVisibleLines();
     const visibleBlocks = getBlocksInViewport(this.blocks, fromLine, toLine);
-    const selectedIndex = this.view.state.field(selectedBlockField);
+    const selectedIndices = this.view.state.field(selectedBlockField);
     const cursorBlockIndex = this.getCursorBlockIndex();
 
     // Track which blocks we've rendered
@@ -307,8 +781,7 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       }
 
       // Position the handle and update state classes
-      // Only match if blockIndex is valid (>= 0) to avoid -1 === -1 matching all
-      const isSelected = blockIndex >= 0 && blockIndex === selectedIndex;
+      const isSelected = blockIndex >= 0 && selectedIndices.includes(blockIndex);
       const hasCursor = blockIndex >= 0 && blockIndex === cursorBlockIndex;
       this.positionHandle(wrapper, block, isSelected, hasCursor);
     }
@@ -370,7 +843,16 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       // Clear any text selection to prevent dragging selected text
       window.getSelection()?.removeAllRanges();
 
-      e.dataTransfer.setData('text/plain', blockIndex.toString());
+      // Check if this block is part of a multi-selection
+      const selectedIndices = this.view.state.field(selectedBlockField);
+      const isPartOfSelection = selectedIndices.includes(blockIndex);
+
+      // Determine which blocks to drag
+      const blocksToDrag = isPartOfSelection && selectedIndices.length > 1
+        ? selectedIndices
+        : [blockIndex];
+
+      e.dataTransfer.setData('text/plain', JSON.stringify(blocksToDrag));
       e.dataTransfer.effectAllowed = 'move';
 
       // Set a drag image to prevent browser from using text selection
@@ -381,16 +863,27 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       e.dataTransfer.setDragImage(dragImage, 12, 12);
       setTimeout(() => dragImage.remove(), 0);
 
-      wrapper.classList.add('dragging');
+      // Mark all dragged blocks
+      for (const idx of blocksToDrag) {
+        const handle = this.handleElements.get(idx);
+        if (handle) handle.classList.add('dragging');
+      }
 
       // Dispatch custom event for drag manager
       this.view.dom.dispatchEvent(new CustomEvent('block-drag-start', {
-        detail: { blockIndex, block: this.blocks[blockIndex] }
+        detail: {
+          blockIndex,
+          blockIndices: blocksToDrag,
+          blocks: blocksToDrag.map(i => this.blocks[i])
+        }
       }));
     });
 
     handle.addEventListener('dragend', () => {
-      wrapper.classList.remove('dragging');
+      // Remove dragging class from all handles
+      for (const [idx, handle] of this.handleElements) {
+        handle.classList.remove('dragging');
+      }
       this.view.dom.dispatchEvent(new CustomEvent('block-drag-end'));
     });
 
@@ -408,15 +901,20 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     // Account for scroll position
     const scrollTop = this.view.scrollDOM.scrollTop;
     const editorPadding = parseInt(getComputedStyle(this.view.contentDOM).paddingTop) || 0;
-    const editorLeft = parseInt(getComputedStyle(this.view.contentDOM).paddingLeft) || 0;
 
     // Get the computed line-height from the editor for single line height
     const lineHeightStyle = getComputedStyle(this.view.contentDOM).lineHeight;
     const singleLineHeight = parseFloat(lineHeightStyle) || 24;
 
-    // Position at first line, use single line height for wrapped paragraphs
-    const top = linePos.top - scrollTop + editorPadding;
-    const left = editorLeft + 30;
+    // Get the content's actual position within the scroller (accounts for centering)
+    const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+    const contentRect = this.view.contentDOM.getBoundingClientRect();
+    const contentOffset = contentRect.left - scrollerRect.left;
+
+    // Position at first line, vertically centered with the line
+    const verticalOffset = (linePos.height - singleLineHeight) / 2;
+    const top = linePos.top - scrollTop + editorPadding + verticalOffset;
+    const left = contentOffset;  // Handles go at left edge of content (in the gutter)
 
     wrapper.style.top = `${top}px`;
     wrapper.style.left = `${left}px`;
@@ -482,6 +980,7 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     if (update.docChanged || update.viewportChanged || update.geometryChanged) {
       this.updateBlocks();
       this.renderHandles();
+      this.updateOverlayHeight();
       return;
     }
 
@@ -505,8 +1004,21 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       this.view.scrollDOM.removeEventListener('mouseleave', this.handleMouseLeave);
     }
 
+    // Remove margin selection listeners
+    if (this.handleMarginMouseDown) {
+      this.view.scrollDOM.removeEventListener('mousedown', this.handleMarginMouseDown);
+    }
+    if (this.autoScrollInterval) {
+      clearInterval(this.autoScrollInterval);
+    }
+    document.removeEventListener('mousemove', this.handleSelectionDrag);
+    document.removeEventListener('mouseup', this.handleSelectionEnd);
+
     if (this.overlay) {
       this.overlay.remove();
+    }
+    if (this.selectionRect) {
+      this.selectionRect.remove();
     }
     this.handleElements.clear();
   }
@@ -526,8 +1038,8 @@ const clickToClearSelection = EditorView.domEventHandlers({
       return false;
     }
 
-    const selectedIndex = view.state.field(selectedBlockField);
-    if (selectedIndex >= 0) {
+    const selectedIndices = view.state.field(selectedBlockField);
+    if (selectedIndices.length > 0) {
       view.dispatch({
         effects: clearBlockSelectionEffect.of(null)
       });
@@ -555,15 +1067,31 @@ const blockOverlayStyles = EditorView.baseTheme({
     opacity: '1'
   },
 
+  // Hide all handles during drag selection
+  '& .cm-block-overlay.is-selecting .cm-block-handle-wrapper': {
+    opacity: '0 !important'
+  },
 
   // Keep selected block's handle visible
   '& .cm-block-handle-wrapper.selected': {
     opacity: '1'
   },
 
+  // Show handles during pending selection (drag selection)
+  '& .cm-block-handle-wrapper.pending-selection': {
+    opacity: '1'
+  },
+
   // Selected block highlight
   '& .cm-block-selected': {
-    backgroundColor: 'rgba(249, 115, 22, 0.08)'
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderRadius: '4px'
+  },
+
+  // Pending selection highlight (during drag)
+  '& .cm-block-pending': {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderRadius: '4px'
   },
 
   // Add button
