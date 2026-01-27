@@ -5285,9 +5285,7 @@ h3.ce-header {
 
 /* Line styling */
 .note-editor .cm-line {
-  padding: 3px 6px;
-  margin: 1px 0;
-  border-radius: 4px;
+  padding: 4px 6px;  /* Absorb margin into padding to keep CodeMirror positioning accurate */
 }
 
 /* Selection */

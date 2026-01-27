@@ -201,6 +201,7 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     // Height will be set by updateOverlayHeight()
 
     // Create selection rectangle for visual feedback during drag
+    // Attach to content-page so it can extend above the title
     this.selectionRect = document.createElement('div');
     this.selectionRect.className = 'cm-selection-rect';
     this.selectionRect.style.cssText = `
@@ -212,7 +213,6 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       display: none;
       z-index: 50;
     `;
-    this.overlay.appendChild(this.selectionRect);
 
     // Use event delegation for handle interactions
     this.overlay.addEventListener('mousedown', this.handleMouseDown.bind(this), true);
@@ -226,19 +226,36 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         scroller.appendChild(this.overlay);
         this.updateOverlayHeight();
       }
+
+      // Attach selection rectangle to content-page for full-page coverage
+      const contentPage = document.getElementById('content-page');
+      if (contentPage && this.selectionRect) {
+        contentPage.style.position = 'relative';
+        contentPage.appendChild(this.selectionRect);
+      }
     });
   }
 
   /**
-   * Convert viewport (client) coordinates to overlay-relative coordinates
+   * Convert viewport (client) coordinates to content-page-relative coordinates
    * Accounts for scroll position so coordinates are relative to full content
    */
-  viewportToOverlayCoords(clientX, clientY) {
-    const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-    const scrollTop = this.view.scrollDOM.scrollTop;
+  viewportToContentPageCoords(clientX, clientY) {
+    const contentPage = document.getElementById('content-page');
+    if (!contentPage) {
+      // Fallback to scroller coords
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const scrollTop = this.view.scrollDOM.scrollTop;
+      return {
+        x: clientX - scrollerRect.left,
+        y: clientY - scrollerRect.top + scrollTop
+      };
+    }
+    const pageRect = contentPage.getBoundingClientRect();
+    const scrollTop = contentPage.scrollTop;
     return {
-      x: clientX - scrollerRect.left,
-      y: clientY - scrollerRect.top + scrollTop
+      x: clientX - pageRect.left,
+      y: clientY - pageRect.top + scrollTop
     };
   }
 
@@ -283,18 +300,37 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
    * Set up margin selection for multi-block selection
    */
   setupMarginSelection() {
-    // Check if click is in margin area (left or right of content)
+    // Check if click is in margin area (left, right, or below last block)
     this.isInMargin = (e) => {
       const contentRect = this.view.contentDOM.getBoundingClientRect();
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const contentPage = document.getElementById('content-page');
+      const pageRect = contentPage ? contentPage.getBoundingClientRect() : scrollerRect;
       const x = e.clientX;
+      const y = e.clientY;
 
-      // Left margin: between scroller left and content left
-      const inLeftMargin = x >= scrollerRect.left && x < contentRect.left;
-      // Right margin: between content right and scroller right
-      const inRightMargin = x > contentRect.right && x <= scrollerRect.right;
+      // Use the wider of scroller or content-page for margin detection
+      const outerLeft = Math.min(scrollerRect.left, pageRect.left);
+      const outerRight = Math.max(scrollerRect.right, pageRect.right);
+      const outerBottom = Math.max(scrollerRect.bottom, pageRect.bottom);
 
-      return inLeftMargin || inRightMargin;
+      // Left margin: between outer container and content
+      const inLeftMargin = x >= outerLeft && x < contentRect.left;
+      // Right margin: between content and outer container
+      const inRightMargin = x > contentRect.right && x <= outerRight;
+
+      // Bottom margin: check if below the last block's bottom edge
+      let inBottomMargin = false;
+      if (this.blocks && this.blocks.length > 0) {
+        const lastBlock = this.blocks[this.blocks.length - 1];
+        const lastLine = this.view.state.doc.line(lastBlock.endLine);
+        const lastLinePos = this.view.lineBlockAt(lastLine.from);
+        const lastBlockBottom = lastLinePos.top + lastLinePos.height + contentRect.top - this.view.scrollDOM.scrollTop;
+        // Add some buffer (e.g., one line height) to account for padding between blocks
+        inBottomMargin = y > lastBlockBottom + 20 && y <= outerBottom;
+      }
+
+      return inLeftMargin || inRightMargin || inBottomMargin;
     };
 
     // Get document Y coordinate from viewport Y
@@ -319,8 +355,11 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
     this.handleMarginMouseDown = (e) => {
       if (!this.isInMargin(e)) return;
       if (e.target.closest('.cm-block-handle-wrapper')) return;
+      // Don't interfere with title/description editing
+      if (e.target.closest('#content-header-title, #content-header-description')) return;
 
       e.preventDefault();
+      e.stopPropagation();
 
       // Clear any existing block selection
       const selectedIndices = this.view.state.field(selectedBlockField);
@@ -367,18 +406,15 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         }
       }, 16);
 
-      // Store start position in overlay coordinates
-      const startOverlay = this.viewportToOverlayCoords(e.clientX, e.clientY);
-      this.selectionStartOverlayPos = startOverlay;
+      // Store start position in content-page coordinates
+      const startPos = this.viewportToContentPageCoords(e.clientX, e.clientY);
+      this.selectionStartPos = startPos;
 
-      // Set overflow hidden on overlay during selection
-      this.overlay.style.overflow = 'hidden';
-
-      // Show selection rectangle (now using overlay coordinates)
+      // Show selection rectangle (using content-page coordinates)
       if (this.selectionRect) {
         this.selectionRect.style.display = 'block';
-        this.selectionRect.style.left = `${startOverlay.x}px`;
-        this.selectionRect.style.top = `${startOverlay.y}px`;
+        this.selectionRect.style.left = `${startPos.x}px`;
+        this.selectionRect.style.top = `${startPos.y}px`;
         this.selectionRect.style.width = '0px';
         this.selectionRect.style.height = '0px';
       }
@@ -439,22 +475,21 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       const minX = Math.min(this.selectionStartX, this.lastMouseX);
       const maxX = Math.max(this.selectionStartX, this.lastMouseX);
 
-      // Convert current mouse position to overlay coordinates
-      const currentOverlay = this.viewportToOverlayCoords(this.lastMouseX, this.lastMouseY);
+      // Convert current mouse position to content-page coordinates
+      const currentPos = this.viewportToContentPageCoords(this.lastMouseX, this.lastMouseY);
 
-      // Calculate rectangle bounds in overlay coordinates
-      const overlayMinX = Math.min(this.selectionStartOverlayPos.x, currentOverlay.x);
-      const overlayMaxX = Math.max(this.selectionStartOverlayPos.x, currentOverlay.x);
-      const overlayMinY = Math.min(this.selectionStartOverlayPos.y, currentOverlay.y);
-      const overlayMaxY = Math.max(this.selectionStartOverlayPos.y, currentOverlay.y);
+      // Calculate rectangle bounds in content-page coordinates
+      const rectMinX = Math.min(this.selectionStartPos.x, currentPos.x);
+      const rectMaxX = Math.max(this.selectionStartPos.x, currentPos.x);
+      const rectMinY = Math.min(this.selectionStartPos.y, currentPos.y);
+      const rectMaxY = Math.max(this.selectionStartPos.y, currentPos.y);
 
-      // Update selection rectangle position and size (overlay coords)
-      // Container's overflow:hidden handles clipping
+      // Update selection rectangle position and size
       if (this.selectionRect) {
-        this.selectionRect.style.left = `${overlayMinX}px`;
-        this.selectionRect.style.top = `${overlayMinY}px`;
-        this.selectionRect.style.width = `${overlayMaxX - overlayMinX}px`;
-        this.selectionRect.style.height = `${overlayMaxY - overlayMinY}px`;
+        this.selectionRect.style.left = `${rectMinX}px`;
+        this.selectionRect.style.top = `${rectMinY}px`;
+        this.selectionRect.style.width = `${rectMaxX - rectMinX}px`;
+        this.selectionRect.style.height = `${rectMaxY - rectMinY}px`;
       }
 
       // Find all blocks in the DOCUMENT Y range (not just visible)
@@ -492,9 +527,8 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         this.autoScrollInterval = null;
       }
 
-      // Remove selecting class and reset overflow
+      // Remove selecting class
       this.overlay.classList.remove('is-selecting');
-      this.overlay.style.overflow = '';
 
       // Hide selection rectangle
       if (this.selectionRect) {
@@ -513,8 +547,33 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
       this.clearPendingSelectionVisuals();
     };
 
-    // Attach mousedown listener to scroller
-    this.view.scrollDOM.addEventListener('mousedown', this.handleMarginMouseDown);
+    // Attach mousedown listener to scroller (capture phase to intercept before CodeMirror)
+    this.view.scrollDOM.addEventListener('mousedown', this.handleMarginMouseDown, true);
+
+    // Also attach to content-page to handle margins in the header/title area and bottom
+    this.contentPage = document.getElementById('content-page');
+    if (this.contentPage) {
+      this.handleContentPageMouseDown = (e) => {
+        // Check if click is in the margin area of content-page (left, right, or bottom)
+        const contentRect = this.view.contentDOM.getBoundingClientRect();
+        const pageRect = this.contentPage.getBoundingClientRect();
+        const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+
+        const inLeftMargin = x >= pageRect.left && x < contentRect.left;
+        const inRightMargin = x > contentRect.right && x <= pageRect.right;
+        // Bottom margin: below scroller/content but within content-page
+        const inBottomMargin = y > scrollerRect.bottom && y <= pageRect.bottom;
+
+        // Only handle if in margin and not already handled by scroller
+        if ((inLeftMargin || inRightMargin || inBottomMargin) && !e.target.closest('.cm-editor')) {
+          // Trigger the same margin selection behavior
+          this.handleMarginMouseDown(e);
+        }
+      };
+      this.contentPage.addEventListener('mousedown', this.handleContentPageMouseDown, true);
+    }
   }
 
   /**
@@ -642,7 +701,6 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
         const line = this.view.state.doc.line(lineNum);
         const lineDOM = this.view.domAtPos(line.from);
         if (lineDOM && lineDOM.node) {
-          // Find the .cm-line element by traversing up the DOM
           let element = lineDOM.node.nodeType === 1 ? lineDOM.node : lineDOM.node.parentElement;
           const lineElement = element?.closest('.cm-line');
           if (lineElement) {
@@ -1006,7 +1064,10 @@ const blockHandlesPlugin = ViewPlugin.fromClass(class {
 
     // Remove margin selection listeners
     if (this.handleMarginMouseDown) {
-      this.view.scrollDOM.removeEventListener('mousedown', this.handleMarginMouseDown);
+      this.view.scrollDOM.removeEventListener('mousedown', this.handleMarginMouseDown, true);
+    }
+    if (this.handleContentPageMouseDown && this.contentPage) {
+      this.contentPage.removeEventListener('mousedown', this.handleContentPageMouseDown, true);
     }
     if (this.autoScrollInterval) {
       clearInterval(this.autoScrollInterval);
@@ -1049,6 +1110,63 @@ const clickToClearSelection = EditorView.domEventHandlers({
 });
 
 // ========================================
+// Keyboard Handler for Block Selection
+// ========================================
+
+/**
+ * Handle keyboard events for selected blocks (delete with Backspace/Delete)
+ */
+const blockSelectionKeyHandler = EditorView.domEventHandlers({
+  keydown(event, view) {
+    // Only handle Backspace or Delete
+    if (event.key !== 'Backspace' && event.key !== 'Delete') {
+      return false;
+    }
+
+    const selectedIndices = view.state.field(selectedBlockField);
+    if (selectedIndices.length === 0) {
+      return false;
+    }
+
+    // Prevent default behavior
+    event.preventDefault();
+
+    const blocks = parseBlocks(view.state.doc);
+
+    // Sort indices in reverse order to delete from end first (preserves positions)
+    const sortedIndices = [...selectedIndices].sort((a, b) => b - a);
+
+    // Build changes to delete all selected blocks
+    const changes = [];
+    for (const idx of sortedIndices) {
+      const block = blocks[idx];
+      if (!block) continue;
+
+      // Include newline after block if it exists
+      let deleteEnd = block.to;
+      if (deleteEnd < view.state.doc.length) {
+        const nextChar = view.state.doc.sliceString(deleteEnd, deleteEnd + 1);
+        if (nextChar === '\n') {
+          deleteEnd++;
+        }
+      }
+
+      changes.push({ from: block.from, to: deleteEnd });
+    }
+
+    // Apply all deletions and clear selection
+    if (changes.length > 0) {
+      view.dispatch({
+        changes,
+        effects: clearBlockSelectionEffect.of(null)
+      });
+    }
+
+    return true;
+  }
+});
+
+// ========================================
 // Styles
 // ========================================
 
@@ -1084,14 +1202,12 @@ const blockOverlayStyles = EditorView.baseTheme({
 
   // Selected block highlight
   '& .cm-block-selected': {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderRadius: '4px'
+    backgroundColor: 'rgba(59, 130, 246, 0.12)'
   },
 
   // Pending selection highlight (during drag)
   '& .cm-block-pending': {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderRadius: '4px'
+    backgroundColor: 'rgba(59, 130, 246, 0.12)'
   },
 
   // Add button
@@ -1176,6 +1292,7 @@ export const blockOverlayExtension = [
   selectionDecorationPlugin,
   blockHandlesPlugin,
   clickToClearSelection,
+  blockSelectionKeyHandler,
   blockOverlayStyles
 ];
 
