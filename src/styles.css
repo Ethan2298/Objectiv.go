@@ -1594,7 +1594,6 @@ body.solarized-mode .web-search-dropdown {
   color: var(--text);
   z-index: 1;
   border: 1px solid var(--border);
-  border-bottom: none;
 }
 
 body.light-mode .header-tab.active {
