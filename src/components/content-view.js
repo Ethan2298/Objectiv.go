@@ -774,45 +774,54 @@ async function renderNoteViewInContainer(container) {
     restoreOnEmpty: true
   });
 
-  // Clear container and mount Editor.js directly (flat structure)
+  // Clear container and mount editor directly (flat structure)
   container.innerHTML = '';
   container.classList.add('note-editor');
 
-  // Get modules for Editor.js and HTML migration
-  const EditorJsEditor = window.Layer?.EditorJsEditor;
-  const HtmlToEditorJs = window.Layer?.HtmlToEditorJs;
+  // Get modules
+  const MarkdownEditor = window.Layer?.MarkdownEditor;
+  const EditorJsToMarkdown = window.Layer?.EditorJsToMarkdown;
   const NoteStorage = window.Layer?.NoteStorage;
 
-  // Prepare content - lazy migrate HTML to Editor.js format if needed
+  // Prepare content - detect format and migrate if needed
   let editorContent = note.content || '';
-  if (editorContent && NoteStorage?.isEditorJsFormat && !NoteStorage.isEditorJsFormat(editorContent)) {
-    // Content is HTML (from Tiptap) - convert to Editor.js format
-    if (HtmlToEditorJs?.convert) {
-      console.log('Converting HTML content to Editor.js format for note:', note.id);
-      editorContent = HtmlToEditorJs.convert(editorContent);
-    }
+
+  // Check if content is Editor.js JSON format and needs migration
+  if (editorContent && EditorJsToMarkdown?.isEditorJsFormat?.(editorContent)) {
+    console.log('Migrating Editor.js content to markdown for note:', note.id);
+    editorContent = EditorJsToMarkdown.convert(editorContent);
+    // Note: Content will be saved as markdown on first edit
   }
 
-  // Initialize Editor.js editor directly in container
-  if (EditorJsEditor?.initNoteEditor) {
-    await EditorJsEditor.initNoteEditor(
-      editorContent,
-      note.id,
-      container,
-      async (jsonContent) => {
-        // Auto-save callback
-        note.content = jsonContent;
-        note.updatedAt = new Date().toISOString();
-        if (NoteStorage?.saveNote) {
-          await NoteStorage.saveNote(note);
+  // Initialize Markdown editor
+  if (MarkdownEditor?.initMarkdownEditor) {
+    try {
+      console.log('Initializing Markdown editor for note:', note.id);
+      await MarkdownEditor.initMarkdownEditor(
+        editorContent,
+        note.id,
+        container,
+        async (markdownContent) => {
+          // Auto-save callback - saves as raw markdown
+          console.log('Auto-saving note:', note.id);
+          note.content = markdownContent;
+          note.updatedAt = new Date().toISOString();
+          if (NoteStorage?.saveNote) {
+            await NoteStorage.saveNote(note);
+          }
         }
-      }
-    );
+      );
+      console.log('Markdown editor initialized successfully');
+    } catch (err) {
+      console.error('Failed to initialize Markdown editor:', err);
+      // Fall through to textarea fallback
+    }
   } else {
+    console.warn('MarkdownEditor module not available, using fallback');
     // Fallback - simple textarea
     container.innerHTML = `
       <div class="note-fallback-editor">
-        <textarea class="note-content-textarea" placeholder="Write your note...">${note.content || ''}</textarea>
+        <textarea class="note-content-textarea" placeholder="Write your note...">${editorContent || ''}</textarea>
       </div>
     `;
 

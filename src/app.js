@@ -68,10 +68,12 @@ import * as ContentView from './components/content-view.js';
 import * as NextStepTimer from './components/next-step-timer.js';
 import * as GlobalNav from './components/global-nav.js';
 import * as EditorJsEditor from './components/editorjs-editor.js';
+import * as MarkdownEditor from './components/markdown-editor.js';
 import * as DirectoryListing from './components/directory-listing.js';
 import * as Toast from './components/toast.js';
 import * as TaskListView from './components/task-list-view.js';
 import * as HtmlToEditorJs from './utils/html-to-editorjs.js';
+import * as EditorJsToMarkdown from './utils/editorjs-to-markdown.js';
 
 // ========================================
 // Global Window Reference
@@ -124,13 +126,15 @@ window.Layer = {
   NextStepTimer,
   GlobalNav,
   EditorJsEditor,
+  MarkdownEditor,
   DirectoryListing,
   Toast,
   TaskListView,
   Tabs,
 
   // Editor utilities
-  HtmlToEditorJs
+  HtmlToEditorJs,
+  EditorJsToMarkdown
 };
 
 // ========================================

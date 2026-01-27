@@ -11,7 +11,10 @@
     "terminal": "node life.js"
   },
   "dependencies": {
-    "blessed": "^0.1.81"
+    "@supabase/supabase-js": "^2.93.1",
+    "blessed": "^0.1.81",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
   },
   "devDependencies": {
     "electron": "^33.0.0"

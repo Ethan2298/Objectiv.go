@@ -19,6 +19,21 @@ if (fs.existsSync(envPath)) {
   });
 }
 
+// Load Doppler secrets if available
+const dopplerSecretsPath = path.join(__dirname, 'doppler-secrets.js');
+if (fs.existsSync(dopplerSecretsPath)) {
+  try {
+    const content = fs.readFileSync(dopplerSecretsPath, 'utf-8');
+    const match = content.match(/ANTHROPIC_API_KEY["']?\s*:\s*["']([^"']+)["']/);
+    if (match && match[1]) {
+      process.env.ANTHROPIC_API_KEY = match[1];
+      console.log('🔑 ANTHROPIC_API_KEY loaded from Doppler secrets');
+    }
+  } catch (err) {
+    console.warn('Failed to load Doppler secrets:', err.message);
+  }
+}
+
 // Groq API configuration
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_MODEL = 'llama-3.1-8b-instant';

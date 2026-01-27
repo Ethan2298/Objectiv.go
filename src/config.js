@@ -17,7 +17,7 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // ========================================
 
 export const ANTHROPIC_API_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-export const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+export const ANTHROPIC_MODEL = 'claude-opus-4-5-20251101';
 export const ANTHROPIC_MAX_TOKENS = 4096;
 
 // ========================================
