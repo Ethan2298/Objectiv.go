@@ -1447,7 +1447,10 @@ body.solarized-mode .web-search-dropdown {
   min-width: 0;
   overflow-x: auto;
   overflow-y: visible;
-  padding-left: 8px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px 2px 0 0;
+  background: var(--bg);
 }
 
 .header-tab {
@@ -1463,32 +1466,21 @@ body.solarized-mode .web-search-dropdown {
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 2px 2px 0 0;
   cursor: pointer;
   margin: 0 1px;
   padding: 0 12px;
 }
 
-.header-tab::before,
-.header-tab::after {
+/* Active tab border break-through effect */
+.header-tab.active::after {
   content: '';
   position: absolute;
-  bottom: 0;
-  width: 8px;
-  height: 8px;
-  background: transparent;
-}
-
-.header-tab.active::before {
-  left: -8px;
-  border-radius: 0 0 8px 0;
-  box-shadow: 4px 0 0 0 var(--bg-subtle);
-}
-
-.header-tab.active::after {
-  right: -8px;
-  border-radius: 0 0 0 8px;
-  box-shadow: -4px 0 0 0 var(--bg-subtle);
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--bg-subtle);
 }
 
 .tab-icon {
@@ -1609,13 +1601,14 @@ body.solarized-mode .web-search-dropdown {
 .header-tab:hover {
   background: var(--bg-hover);
   color: var(--text);
-  border-radius: 8px 8px 0 0;
 }
 
 .header-tab.active {
   background: var(--bg-subtle);
   color: var(--text);
   z-index: 1;
+  margin-bottom: -1px;
+  padding-bottom: 1px;
 }
 
 body.light-mode .header-tab.active {
