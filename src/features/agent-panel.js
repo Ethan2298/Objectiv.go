@@ -10,6 +10,8 @@
 import * as AnthropicService from '../services/anthropic-service.js';
 import * as ChatContext from '../services/chat-context.js';
 import * as smd from '../vendor/smd.js';
+import * as SideListState from '../state/side-list-state.js';
+import * as Repository from '../data/repository.js';
 
 // ========================================
 // Constants
@@ -423,6 +425,7 @@ export function initChatTabs() {
 
   // Set up event listeners
   initTabEventListeners();
+  initTabTearOff();
 }
 
 /**
@@ -436,6 +439,7 @@ export function createChatTab(title = 'New Chat') {
     title,
     messages: [],
     mode: currentMode, // inherit current mode as default
+    selectedContext: [], // per-tab attached context items
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -487,6 +491,9 @@ export function switchToTab(tabId) {
   // Restore per-tab mode
   const tabMode = tab.mode || MODES.AGENT;
   setMode(tabMode);
+
+  // Restore per-tab context chips
+  renderContextChips();
 
   renderChatTabs();
 }
@@ -719,6 +726,180 @@ function showChatHistory() {
     y: rect.bottom + 4,
     items
   });
+}
+
+// ========================================
+// Tab Tear-Off (Drag to Window)
+// ========================================
+
+let tearOffState = null; // { tabId, startX, startY, ghost, active }
+
+/**
+ * Initialize drag-to-tear-off detection on tab elements.
+ * Called once; uses event delegation on the tabs container.
+ */
+function initTabTearOff() {
+  const container = document.querySelector('.agent-panel-tabs');
+  if (!container) return;
+
+  container.addEventListener('mousedown', onTearOffMouseDown);
+}
+
+function onTearOffMouseDown(e) {
+  const tabEl = e.target.closest('.agent-panel-tab');
+  if (!tabEl || e.target.closest('.tab-close')) return;
+
+  const tabId = parseInt(tabEl.dataset.tabId);
+  if (!tabId) return;
+
+  tearOffState = {
+    tabId,
+    startX: e.clientX,
+    startY: e.clientY,
+    ghost: null,
+    active: false,
+    tabEl
+  };
+
+  document.addEventListener('mousemove', onTearOffMouseMove);
+  document.addEventListener('mouseup', onTearOffMouseUp);
+}
+
+function onTearOffMouseMove(e) {
+  if (!tearOffState) return;
+
+  const dy = e.clientY - tearOffState.startY;
+
+  // Activate tear-off mode once vertical threshold exceeded
+  if (!tearOffState.active && Math.abs(dy) > 40) {
+    tearOffState.active = true;
+
+    // Create ghost element
+    const ghost = tearOffState.tabEl.cloneNode(true);
+    ghost.className = 'agent-panel-tab tear-off-ghost';
+    ghost.style.position = 'fixed';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex = '9999';
+    ghost.style.opacity = '0.8';
+    ghost.style.width = tearOffState.tabEl.offsetWidth + 'px';
+    document.body.appendChild(ghost);
+    tearOffState.ghost = ghost;
+
+    // Dim the original tab
+    tearOffState.tabEl.style.opacity = '0.3';
+  }
+
+  if (tearOffState.active && tearOffState.ghost) {
+    tearOffState.ghost.style.left = (e.clientX - tearOffState.tabEl.offsetWidth / 2) + 'px';
+    tearOffState.ghost.style.top = (e.clientY - 12) + 'px';
+  }
+}
+
+function onTearOffMouseUp(e) {
+  document.removeEventListener('mousemove', onTearOffMouseMove);
+  document.removeEventListener('mouseup', onTearOffMouseUp);
+
+  if (!tearOffState) return;
+
+  // Restore original tab opacity
+  if (tearOffState.tabEl) {
+    tearOffState.tabEl.style.opacity = '';
+  }
+
+  // Remove ghost
+  if (tearOffState.ghost) {
+    tearOffState.ghost.remove();
+  }
+
+  if (tearOffState.active) {
+    // Tear off the tab into a new window
+    tearOffTab(tearOffState.tabId, e.screenX, e.screenY);
+  }
+
+  tearOffState = null;
+}
+
+/**
+ * Tear off a tab into a standalone browser window.
+ * @param {number} tabId - The tab to tear off
+ * @param {number} screenX - Screen X position for the new window
+ * @param {number} screenY - Screen Y position for the new window
+ */
+function tearOffTab(tabId, screenX, screenY) {
+  const tab = chatTabs.find(t => t.id === tabId);
+  if (!tab) return;
+
+  // If tab is streaming, finalize the stream first
+  const stream = tabStreamState.get(tabId);
+  if (stream && stream.isStreaming) {
+    // Abort the stream and capture accumulated text as a completed message
+    if (stream.abortController) {
+      stream.abortController.abort();
+      stream.abortController = null;
+    }
+    if (stream.parser) {
+      try { smd.parser_end(stream.parser); } catch { /* ignore */ }
+      stream.parser = null;
+    }
+    if (stream.accumulatedText.trim()) {
+      tab.messages.push({
+        id: Date.now(),
+        content: stream.accumulatedText,
+        role: 'assistant',
+        timestamp: new Date()
+      });
+    }
+    stream.isStreaming = false;
+    stream.accumulatedText = '';
+    tabStreamState.delete(tabId);
+  }
+
+  // If this is the active tab, make sure messages are saved
+  if (tabId === activeTabId) {
+    saveCurrentTabMessages();
+  }
+
+  // Serialize tab data to a localStorage transfer key
+  const transferKey = `layer-tearoff-${tabId}-${Date.now()}`;
+  const transferData = {
+    messages: tab.messages,
+    mode: tab.mode || currentMode,
+    title: tab.title
+  };
+  localStorage.setItem(transferKey, JSON.stringify(transferData));
+
+  // Open standalone chat window
+  const width = 500;
+  const height = 700;
+  const left = Math.max(0, screenX - width / 2);
+  const top = Math.max(0, screenY - 20);
+  window.open(
+    'chat-window.html',
+    transferKey,  // window.name = transferKey so child can read it
+    `width=${width},height=${height},left=${left},top=${top}`
+  );
+
+  // Remove the tab from parent
+  const index = chatTabs.findIndex(t => t.id === tabId);
+  if (index === -1) return;
+
+  chatTabs.splice(index, 1);
+  cleanupTabStream(tabId);
+
+  // If we tore off the last tab, create a fresh one
+  if (chatTabs.length === 0) {
+    createChatTab();
+    return; // createChatTab already renders and switches
+  }
+
+  // If we tore off the active tab, switch to another
+  if (activeTabId === tabId) {
+    const newIndex = Math.min(index, chatTabs.length - 1);
+    switchToTab(chatTabs[newIndex].id);
+  } else {
+    saveChatTabs();
+    renderChatTabs();
+  }
 }
 
 // ========================================
@@ -1125,21 +1306,26 @@ async function sendMessage() {
   const activeStream = getTabStream(activeTabId);
   if (activeStream.isStreaming) return;
 
-  // Add user message to UI
+  // Add user message to UI (show original, without context block)
   addMessage(content, 'user');
 
-  // Add to conversation context
-  ChatContext.addMessage('user', content);
+  // Prepend selected context to the message for the AI
+  const contextPrefix = serializeContextForPrompt();
+  const contentWithContext = contextPrefix + content;
 
-  // Clear input
+  // Add to conversation context (with context block so AI sees it)
+  ChatContext.addMessage('user', contentWithContext);
+
+  // Clear input and close context search if open
   textarea.value = '';
   textarea.style.height = 'auto';
+  closeContextSearch();
 
-  // Route to appropriate handler based on mode
+  // Route to appropriate handler based on mode (send with context prefix)
   if (currentMode === MODES.AGENT) {
-    await sendAgentMessage(content);
+    await sendAgentMessage(contentWithContext);
   } else {
-    await sendAskMessage(content);
+    await sendAskMessage(contentWithContext);
   }
 }
 
@@ -1467,6 +1653,321 @@ export function clearMessages() {
 }
 
 // ========================================
+// Context Search & Chips
+// ========================================
+
+let contextMenuEl = null;
+
+/**
+ * Initialize the @ context button
+ */
+function initContextSearch() {
+  const btn = document.getElementById('agent-context-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (contextMenuEl) {
+      closeContextSearch();
+    } else {
+      openContextSearch();
+    }
+  });
+}
+
+function openContextSearch() {
+  closeContextSearch();
+
+  const btn = document.getElementById('agent-context-btn');
+  if (!btn) return;
+
+  const rect = btn.getBoundingClientRect();
+
+  // Create floating menu
+  contextMenuEl = document.createElement('div');
+  contextMenuEl.className = 'context-search-menu';
+
+  // Search input
+  const input = document.createElement('input');
+  input.className = 'context-search-input';
+  input.type = 'text';
+  input.placeholder = 'Search items...';
+  input.autocomplete = 'off';
+  contextMenuEl.appendChild(input);
+
+  // Results container
+  const results = document.createElement('div');
+  results.className = 'context-search-results';
+  contextMenuEl.appendChild(results);
+
+  // Position above the button
+  contextMenuEl.style.position = 'fixed';
+  contextMenuEl.style.left = rect.left + 'px';
+  contextMenuEl.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+
+  document.body.appendChild(contextMenuEl);
+
+  // Adjust if off-screen right
+  const menuRect = contextMenuEl.getBoundingClientRect();
+  if (menuRect.right > window.innerWidth - 8) {
+    contextMenuEl.style.left = (window.innerWidth - menuRect.width - 8) + 'px';
+  }
+
+  input.focus();
+  renderContextSearchResults('', results);
+
+  input.addEventListener('input', () => {
+    renderContextSearchResults(input.value.trim(), results);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeContextSearch();
+    }
+  });
+
+  // Close on outside click (delayed to avoid immediate close)
+  setTimeout(() => {
+    document.addEventListener('click', handleContextSearchOutsideClick);
+  }, 0);
+}
+
+function handleContextSearchOutsideClick(e) {
+  if (contextMenuEl && !contextMenuEl.contains(e.target) &&
+      e.target.id !== 'agent-context-btn' && !e.target.closest('#agent-context-btn')) {
+    closeContextSearch();
+  }
+}
+
+function closeContextSearch() {
+  if (contextMenuEl) {
+    contextMenuEl.remove();
+    contextMenuEl = null;
+  }
+  document.removeEventListener('click', handleContextSearchOutsideClick);
+}
+
+/**
+ * Get all searchable items from the side list and repository
+ */
+function getSearchableItems() {
+  const items = [];
+  const data = Repository.loadData();
+
+  // Objectives and their children
+  if (data && data.objectives) {
+    for (const obj of data.objectives) {
+      items.push({ type: 'Objective', id: obj.id, name: obj.name, data: obj });
+    }
+  }
+
+  // Folders
+  const folders = SideListState.getFolders();
+  if (folders) {
+    for (const f of folders) {
+      items.push({ type: 'Folder', id: f.id, name: f.name, data: f });
+    }
+  }
+
+  // Notes - pull from side list items which includes both filed and unfiled notes
+  const sideItems = SideListState.getItems();
+  if (sideItems) {
+    for (const sideItem of sideItems) {
+      if (sideItem.type === 'note') {
+        items.push({ type: 'Note', id: sideItem.noteId, name: sideItem.name, data: sideItem.data || sideItem });
+      }
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Render search results in the floating menu
+ */
+function renderContextSearchResults(query, container) {
+  if (!container) return;
+
+  const allItems = getSearchableItems();
+  const lowerQuery = query.toLowerCase();
+
+  // Filter — show all items when no query
+  const filtered = query
+    ? allItems.filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
+    : allItems;
+
+  // Get currently selected IDs for this tab
+  const tab = chatTabs.find(t => t.id === activeTabId);
+  const selectedIds = new Set((tab?.selectedContext || []).map(c => c.id));
+
+  // Group by type
+  const groups = {};
+  for (const item of filtered) {
+    if (!groups[item.type]) groups[item.type] = [];
+    groups[item.type].push(item);
+  }
+
+  container.innerHTML = '';
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="context-search-empty">No items found</div>';
+    return;
+  }
+
+  const typeIcons = {
+    Objective: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
+    Folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    Note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'
+  };
+
+  for (const [type, items] of Object.entries(groups)) {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'context-search-group';
+
+    const header = document.createElement('div');
+    header.className = 'context-search-group-header';
+    header.textContent = type + 's';
+    groupEl.appendChild(header);
+
+    for (const item of items.slice(0, 10)) {
+      const row = document.createElement('div');
+      row.className = 'context-search-item' + (selectedIds.has(item.id) ? ' selected' : '');
+
+      const icon = typeIcons[item.type] || '';
+      row.innerHTML = `
+        <svg class="context-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>
+        <span class="context-search-name">${escapeHtml(item.name)}</span>
+        ${item.parentName ? `<span class="context-search-parent">${escapeHtml(item.parentName)}</span>` : ''}
+      `;
+
+      row.addEventListener('click', () => {
+        toggleContextItem(item);
+        row.classList.toggle('selected');
+      });
+
+      groupEl.appendChild(row);
+    }
+
+    container.appendChild(groupEl);
+  }
+}
+
+/**
+ * Toggle a context item on/off for the active tab
+ */
+function toggleContextItem(item) {
+  const tab = chatTabs.find(t => t.id === activeTabId);
+  if (!tab) return;
+
+  if (!tab.selectedContext) tab.selectedContext = [];
+
+  const index = tab.selectedContext.findIndex(c => c.id === item.id);
+  if (index >= 0) {
+    tab.selectedContext.splice(index, 1);
+  } else {
+    tab.selectedContext.push({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      data: item.data
+    });
+  }
+
+  saveChatTabs();
+  renderContextChips();
+}
+
+/**
+ * Remove a context item by ID
+ */
+function removeContextItem(itemId) {
+  const tab = chatTabs.find(t => t.id === activeTabId);
+  if (!tab || !tab.selectedContext) return;
+
+  tab.selectedContext = tab.selectedContext.filter(c => c.id !== itemId);
+  saveChatTabs();
+  renderContextChips();
+}
+
+/**
+ * Render context chips above the textarea
+ */
+function renderContextChips() {
+  const container = document.getElementById('agent-context-chips');
+  if (!container) return;
+
+  const tab = chatTabs.find(t => t.id === activeTabId);
+  const items = tab?.selectedContext || [];
+
+  container.innerHTML = '';
+  if (items.length === 0) return;
+
+  const chipIcons = {
+    Objective: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
+    Folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    Note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'
+  };
+
+  for (const item of items) {
+    const chip = document.createElement('span');
+    chip.className = 'context-chip';
+    const icon = chipIcons[item.type] || '';
+    chip.innerHTML = `
+      <svg class="context-chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>
+      <span class="context-chip-name">${escapeHtml(item.name)}</span>
+      <button class="context-chip-remove" aria-label="Remove">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    `;
+
+    chip.querySelector('.context-chip-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeContextItem(item.id);
+    });
+
+    container.appendChild(chip);
+  }
+}
+
+/**
+ * Serialize selected context items into a prompt prefix
+ */
+function serializeContextForPrompt() {
+  const tab = chatTabs.find(t => t.id === activeTabId);
+  const items = tab?.selectedContext || [];
+  if (items.length === 0) return '';
+
+  const blocks = items.map(item => {
+    const lines = [`[${item.type}: ${item.name}]`];
+    const d = item.data;
+
+    if (item.type === 'Objective') {
+      if (d.description) lines.push(`Description: ${d.description}`);
+      if (d.priorities?.length) {
+        lines.push('Priorities:');
+        for (const p of d.priorities) {
+          lines.push(`  - ${p.name}${p.description ? ': ' + p.description : ''}`);
+        }
+      }
+      if (d.steps?.length) {
+        lines.push('Steps:');
+        for (const s of d.steps) {
+          lines.push(`  - ${s.name}${s.status ? ' (' + s.status + ')' : ''}`);
+        }
+      }
+    } else if (item.type === 'Note') {
+      if (d.content) lines.push(`Content: ${d.content}`);
+    } else if (item.type === 'Folder') {
+      if (d.name) lines.push(`Folder: ${d.name}`);
+    }
+
+    return lines.join('\n');
+  });
+
+  return '--- Selected Context ---\n' + blocks.join('\n\n') + '\n--- End Context ---\n\n';
+}
+
+// ========================================
 // Initialize
 // ========================================
 
@@ -1478,6 +1979,7 @@ export function init() {
   initTextarea();
   initChatInput();
   initChatTabs();
+  initContextSearch();
 
   // Set initial toggle icon state
   const collapsed = localStorage.getItem(PANEL_COLLAPSED_KEY) !== 'false';

@@ -178,17 +178,27 @@
           <!-- Chat messages will appear here -->
         </div>
         <div id="agent-panel-input">
+          <div id="agent-context-chips"></div>
           <textarea id="agent-input-text" placeholder="Message..." rows="1"></textarea>
           <div id="agent-input-footer">
-            <button id="agent-input-pill" type="button">
-              <svg id="agent-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-              <span id="agent-mode-label">Agent</span>
-              <svg class="agent-pill-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
+            <div class="agent-input-footer-left">
+              <button id="agent-input-pill" type="button">
+                <svg id="agent-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <span id="agent-mode-label">Agent</span>
+                <svg class="agent-pill-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </button>
+              <button id="agent-context-btn" type="button" title="Attach context">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4"/>
+                  <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>
+                </svg>
+                <span>Add context</span>
+              </button>
+            </div>
             <button id="agent-send-btn" type="button" aria-label="Send">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 19V5M5 12l7-7 7 7"/>

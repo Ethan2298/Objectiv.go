@@ -1,10 +1,10 @@
 ---
 id: task-20
 title: 'Keep agent tab streaming alive on tab switch, only stop on tab close'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-01-30 19:33'
-updated_date: '2026-01-30 19:36'
+updated_date: '2026-01-30 19:57'
 labels:
   - agent-panel
   - chat-tabs

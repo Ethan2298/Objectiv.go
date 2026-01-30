@@ -1,10 +1,10 @@
 ---
 id: task-19
 title: Make agent panel chat tabs fully independent instances
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-01-30 19:28'
-updated_date: '2026-01-30 19:31'
+updated_date: '2026-01-30 19:57'
 labels:
   - feature
   - agent-panel
