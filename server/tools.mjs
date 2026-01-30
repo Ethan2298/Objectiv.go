@@ -9,25 +9,56 @@
 import { supabase, isAvailable } from './supabase-client.mjs';
 
 // ========================================
-// Editor.js Content Helpers
+// Content Helpers
 // ========================================
 
 /**
- * Wrap blocks array in Editor.js document format
+ * Extract markdown content from stored note.
+ * Notes may be stored as raw markdown or legacy Editor.js JSON.
  */
-function wrapBlocks(blocks) {
-  return JSON.stringify({
-    time: Date.now(),
-    blocks,
-    version: '2.29.0'
-  });
-}
-
-/**
- * Create empty Editor.js document
- */
-function emptyDocument() {
-  return wrapBlocks([]);
+function extractMarkdown(content) {
+  if (!content) return '';
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && Array.isArray(parsed.blocks)) {
+      // Legacy Editor.js format - convert blocks to markdown
+      return parsed.blocks.map(block => {
+        switch (block.type) {
+          case 'header':
+            return '#'.repeat(block.data.level || 2) + ' ' + (block.data.text || '');
+          case 'paragraph':
+            return block.data.text || '';
+          case 'list': {
+            const items = block.data.items || [];
+            return items.map((item, i) => {
+              const prefix = block.data.style === 'ordered' ? `${i + 1}. ` : '- ';
+              return prefix + (item.content || item);
+            }).join('\n');
+          }
+          case 'checklist': {
+            const items = block.data.items || [];
+            return items.map(item => {
+              const check = item.checked ? '[x]' : '[ ]';
+              return `- ${check} ${item.text || ''}`;
+            }).join('\n');
+          }
+          case 'quote':
+            return `> ${block.data.text || ''}\n> — ${block.data.caption || ''}`;
+          case 'code':
+            return '```\n' + (block.data.code || '') + '\n```';
+          case 'delimiter':
+            return '---';
+          default:
+            return block.data?.text || '';
+        }
+      }).join('\n\n');
+    }
+    // JSON but not Editor.js format - return as-is
+    return content;
+  } catch {
+    // Not JSON - already markdown/plain text
+    return content;
+  }
 }
 
 // ========================================
@@ -60,7 +91,7 @@ export const tools = [
   },
   {
     name: 'create_note',
-    description: 'Create a new note with Editor.js block content',
+    description: 'Create a new note with markdown content',
     input_schema: {
       type: 'object',
       properties: {
@@ -68,29 +99,21 @@ export const tools = [
           type: 'string',
           description: 'Name/title of the note'
         },
-        blocks: {
-          type: 'array',
-          description: 'Array of Editor.js blocks. Block types: "header" (data: {text, level:1-6}), "paragraph" (data: {text}), "list" (data: {style:"ordered"|"unordered", items:[{content:"text",items:[]}]}), "checklist" (data: {items:[{text,checked}]}), "quote" (data: {text, caption}), "code" (data: {code}), "delimiter" (data: {})',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              data: { type: 'object' }
-            },
-            required: ['type', 'data']
-          }
+        content: {
+          type: 'string',
+          description: 'Markdown content for the note body. Do NOT include the title as a heading - the name field is the title.'
         },
         folder_id: {
           type: 'string',
           description: 'Optional folder ID to place the note in'
         }
       },
-      required: ['name', 'blocks']
+      required: ['name', 'content']
     }
   },
   {
     name: 'update_note',
-    description: 'Update an existing note (name and/or blocks)',
+    description: 'Update an existing note (name and/or content). Use get_note first to read current content before editing.',
     input_schema: {
       type: 'object',
       properties: {
@@ -102,17 +125,9 @@ export const tools = [
           type: 'string',
           description: 'New name/title for the note'
         },
-        blocks: {
-          type: 'array',
-          description: 'New Editor.js blocks array. Block types: "header" (data: {text, level:1-6}), "paragraph" (data: {text}), "list" (data: {style:"ordered"|"unordered", items:[{content:"text",items:[]}]}), "checklist" (data: {items:[{text,checked}]}), "quote" (data: {text, caption}), "code" (data: {code}), "delimiter" (data: {})',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              data: { type: 'object' }
-            },
-            required: ['type', 'data']
-          }
+        content: {
+          type: 'string',
+          description: 'New markdown content for the note body. Replaces all existing content.'
         }
       },
       required: ['note_id']
@@ -120,7 +135,7 @@ export const tools = [
   },
   {
     name: 'append_to_note',
-    description: 'Append blocks to the end of an existing note (does not overwrite existing content)',
+    description: 'Append markdown content to the end of an existing note (does not overwrite existing content)',
     input_schema: {
       type: 'object',
       properties: {
@@ -128,69 +143,12 @@ export const tools = [
           type: 'string',
           description: 'The UUID of the note to append to'
         },
-        blocks: {
-          type: 'array',
-          description: 'Blocks to append to the end of the note',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              data: { type: 'object' }
-            },
-            required: ['type', 'data']
-          }
-        }
-      },
-      required: ['note_id', 'blocks']
-    }
-  },
-  {
-    name: 'replace_note_block',
-    description: 'Replace a specific block in a note by index (0-based)',
-    input_schema: {
-      type: 'object',
-      properties: {
-        note_id: {
+        content: {
           type: 'string',
-          description: 'The UUID of the note'
-        },
-        block_index: {
-          type: 'integer',
-          description: 'Index of the block to replace (0-based)'
-        },
-        block: {
-          type: 'object',
-          description: 'The new block to replace with',
-          properties: {
-            type: { type: 'string' },
-            data: { type: 'object' }
-          },
-          required: ['type', 'data']
+          description: 'Markdown content to append to the end of the note'
         }
       },
-      required: ['note_id', 'block_index', 'block']
-    }
-  },
-  {
-    name: 'delete_note_blocks',
-    description: 'Delete blocks from a note by index range',
-    input_schema: {
-      type: 'object',
-      properties: {
-        note_id: {
-          type: 'string',
-          description: 'The UUID of the note'
-        },
-        start_index: {
-          type: 'integer',
-          description: 'Start index (0-based, inclusive)'
-        },
-        end_index: {
-          type: 'integer',
-          description: 'End index (0-based, inclusive). If omitted, deletes only the block at start_index'
-        }
-      },
-      required: ['note_id', 'start_index']
+      required: ['note_id', 'content']
     }
   },
   {
@@ -371,38 +329,20 @@ export const toolHandlers = {
       return `Note not found: ${note_id}`;
     }
 
-    // Parse content to show blocks with indices for easier editing
-    let blocksWithIndices = [];
-    try {
-      const parsed = JSON.parse(data.content || '{}');
-      if (parsed.blocks) {
-        blocksWithIndices = parsed.blocks.map((block, i) => ({
-          index: i,
-          type: block.type,
-          data: block.data
-        }));
-      }
-    } catch {
-      // Content not parseable
-    }
-
     return JSON.stringify({
       id: data.id,
       name: data.name,
       folder_id: data.folder_id,
       created_at: data.created_at,
       updated_at: data.updated_at,
-      blocks: blocksWithIndices
+      content: extractMarkdown(data.content)
     }, null, 2);
   },
 
-  create_note: async ({ name, blocks, folder_id }) => {
+  create_note: async ({ name, content, folder_id }) => {
     if (!isAvailable()) {
       return 'Error: Supabase not configured';
     }
-
-    // Wrap blocks array in Editor.js document format
-    const content = wrapBlocks(blocks || []);
 
     const record = {
       name,
@@ -426,7 +366,7 @@ export const toolHandlers = {
     return `Note created successfully:\n${JSON.stringify(data, null, 2)}`;
   },
 
-  update_note: async ({ note_id, name, blocks }) => {
+  update_note: async ({ note_id, name, content }) => {
     if (!isAvailable()) {
       return 'Error: Supabase not configured';
     }
@@ -438,9 +378,8 @@ export const toolHandlers = {
     if (name !== undefined) {
       updates.name = name;
     }
-    if (blocks !== undefined) {
-      // Wrap blocks array in Editor.js document format
-      updates.content = wrapBlocks(blocks);
+    if (content !== undefined) {
+      updates.content = content;
     }
 
     const { data, error } = await supabase
@@ -457,7 +396,7 @@ export const toolHandlers = {
     return `Note updated successfully:\n${JSON.stringify(data, null, 2)}`;
   },
 
-  append_to_note: async ({ note_id, blocks }) => {
+  append_to_note: async ({ note_id, content: newContent }) => {
     if (!isAvailable()) {
       return 'Error: Supabase not configured';
     }
@@ -473,22 +412,13 @@ export const toolHandlers = {
       return `Error fetching note: ${fetchError.message}`;
     }
 
-    // Parse existing content
-    let existingBlocks = [];
-    try {
-      const parsed = JSON.parse(note.content || '{}');
-      existingBlocks = parsed.blocks || [];
-    } catch {
-      existingBlocks = [];
-    }
-
-    // Append new blocks
-    const newBlocks = [...existingBlocks, ...blocks];
-    const newContent = wrapBlocks(newBlocks);
+    // Extract existing markdown and append
+    const existing = extractMarkdown(note.content);
+    const combined = existing ? existing + '\n\n' + newContent : newContent;
 
     const { data, error } = await supabase
       .from('notes')
-      .update({ content: newContent, updated_at: new Date().toISOString() })
+      .update({ content: combined, updated_at: new Date().toISOString() })
       .eq('id', note_id)
       .select()
       .single();
@@ -497,100 +427,7 @@ export const toolHandlers = {
       return `Error updating note: ${error.message}`;
     }
 
-    return `Appended ${blocks.length} block(s) to note. Total blocks: ${newBlocks.length}`;
-  },
-
-  replace_note_block: async ({ note_id, block_index, block }) => {
-    if (!isAvailable()) {
-      return 'Error: Supabase not configured';
-    }
-
-    // Get existing note
-    const { data: note, error: fetchError } = await supabase
-      .from('notes')
-      .select('content')
-      .eq('id', note_id)
-      .single();
-
-    if (fetchError) {
-      return `Error fetching note: ${fetchError.message}`;
-    }
-
-    // Parse existing content
-    let blocks = [];
-    try {
-      const parsed = JSON.parse(note.content || '{}');
-      blocks = parsed.blocks || [];
-    } catch {
-      return 'Error: Could not parse note content';
-    }
-
-    if (block_index < 0 || block_index >= blocks.length) {
-      return `Error: Block index ${block_index} out of range (0-${blocks.length - 1})`;
-    }
-
-    // Replace block
-    blocks[block_index] = block;
-    const newContent = wrapBlocks(blocks);
-
-    const { error } = await supabase
-      .from('notes')
-      .update({ content: newContent, updated_at: new Date().toISOString() })
-      .eq('id', note_id);
-
-    if (error) {
-      return `Error updating note: ${error.message}`;
-    }
-
-    return `Replaced block at index ${block_index}`;
-  },
-
-  delete_note_blocks: async ({ note_id, start_index, end_index }) => {
-    if (!isAvailable()) {
-      return 'Error: Supabase not configured';
-    }
-
-    // Get existing note
-    const { data: note, error: fetchError } = await supabase
-      .from('notes')
-      .select('content')
-      .eq('id', note_id)
-      .single();
-
-    if (fetchError) {
-      return `Error fetching note: ${fetchError.message}`;
-    }
-
-    // Parse existing content
-    let blocks = [];
-    try {
-      const parsed = JSON.parse(note.content || '{}');
-      blocks = parsed.blocks || [];
-    } catch {
-      return 'Error: Could not parse note content';
-    }
-
-    const endIdx = end_index !== undefined ? end_index : start_index;
-
-    if (start_index < 0 || endIdx >= blocks.length || start_index > endIdx) {
-      return `Error: Invalid index range (${start_index}-${endIdx}) for blocks (0-${blocks.length - 1})`;
-    }
-
-    // Delete blocks
-    const deleteCount = endIdx - start_index + 1;
-    blocks.splice(start_index, deleteCount);
-    const newContent = wrapBlocks(blocks);
-
-    const { error } = await supabase
-      .from('notes')
-      .update({ content: newContent, updated_at: new Date().toISOString() })
-      .eq('id', note_id);
-
-    if (error) {
-      return `Error updating note: ${error.message}`;
-    }
-
-    return `Deleted ${deleteCount} block(s). Remaining blocks: ${blocks.length}`;
+    return `Content appended to note successfully.`;
   },
 
   delete_note: async ({ note_id }) => {
